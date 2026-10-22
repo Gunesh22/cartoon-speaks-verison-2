@@ -282,3 +282,35 @@ Platform: Web / Windows (Target: Brave, Chrome, Edge)
   5. Updated `exportWithMediaRecorder` fallback to explicitly register audio tracks and include audio codecs in the supported container MIME check.
 - **Regression Test**: `tests/renderingAndExport.test.ts`
 - **Verification Status**: Verified (44/44 tests passing, build 0 errors).
+
+---
+
+### BUG-017: New Projects Display Previous Project's Photos, Audio & Lip-Sync Selections
+- **Severity**: High
+- **Affected Files**:
+  - `src/types/assets.ts` (`EditorAsset.projectId`, `MouthSetAsset.projectId`)
+  - `src/core/assets/assetDb.ts` (IndexedDB schema version 2, `deleteAssetFromDb`, `deleteMouthSetFromDb`, project asset cleanup)
+  - `src/state/editorStore.ts` (`addAsset`, `deleteAsset`, `addMouthSet`, `deleteMouthSet`)
+  - `src/components/AssetPanel/AssetPanel.tsx` (Scope filter: "This Project" vs "All Library", per-asset delete button `Trash2`)
+  - `src/components/LipSyncModal/LipSyncModal.tsx` (Auto-reset state on project ID change, project-scoped asset filters)
+- **Observable Symptoms**: Creating a new project displayed media assets, photos, audio files, and lip-sync selections from previously edited projects.
+- **Root Cause**:
+  1. `EditorAsset` and `MouthSetAsset` lacked project-level ownership metadata (`projectId`), so all assets in IndexedDB were globally lumped together into a single flat list.
+  2. `LipSyncModal` component state (`selectedCharId`, `selectedSheetId`, `selectedAudioId`, `extractedMouthSet`, `generatedCues`) persisted in memory across project creations without resetting when `project.id` changed.
+  3. `AssetPanel` had no scope filter and lacked an asset deletion action, leaving users unable to remove unwanted images/audio.
+- **Fix Applied**:
+  1. Added `projectId?: string` to `EditorAsset` and `MouthSetAsset` and updated Dexie database schema to version 2.
+  2. Tagged newly imported assets and generated mouth sets with the active `project.id`.
+  3. Added project-level scoping in `AssetPanel` with a clean scope selector ("This Project" vs "All Library") and single-click delete buttons (`Trash2`) for both media assets and mouth sets.
+  4. Added `useEffect` in `LipSyncModal` listening to `project.id` changes that cleanly resets all modal selections, previews, anchors, and cues whenever a new project is created or opened.
+- **Verification Status**: Verified (44/44 tests passing, build 0 errors).
+
+---
+
+### BUG-018: Chrome Console Flood: "Unable to preventDefault inside passive event listener invocation"
+- **Severity**: Medium / Console Pollution
+- **Affected Files**: `src/components/LipSyncModal/LipSyncModal.tsx`
+- **Observable Symptoms**: Scrolling the mouse wheel over the modal canvas flooded the browser console with dozens of errors: `Unable to preventDefault inside passive event listener invocation. preventDefault @ chunk-NXESFFTV.js:5775`.
+- **Root Cause**: React synthetic `onWheel` event handlers are treated as passive event listeners by modern Chromium browsers. Calling `e.preventDefault()` inside a passive listener is disallowed and throws an error.
+- **Fix Applied**: Removed synthetic `onWheel` from the canvas JSX element and registered an explicit DOM event listener via `useEffect` with `{ passive: false }`. This permits `e.preventDefault()` to smoothly scale the mouth without window scrolling or console errors.
+- **Verification Status**: Verified (44/44 tests passing, build 0 errors).
