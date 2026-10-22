@@ -12,7 +12,15 @@ import {
   calculateProjectDuration,
   calculateFitToScreen,
 } from '../core/timeline/timelineMath';
-import { saveProjectToDb, loadAllAssets, loadAllMouthSets, saveAsset as dbSaveAsset, saveMouthSet as dbSaveMouthSet } from '../core/assets/assetDb';
+import {
+  saveProjectToDb,
+  loadAllAssets,
+  loadAllMouthSets,
+  saveAsset as dbSaveAsset,
+  saveMouthSet as dbSaveMouthSet,
+  deleteAssetFromDb,
+  deleteMouthSetFromDb,
+} from '../core/assets/assetDb';
 import { audioEngine } from '../core/audio/audioEngine';
 
 export type CurrentScreenView = 'projects' | 'editor';
@@ -63,7 +71,9 @@ interface EditorState {
   
   // Asset Actions
   addAsset: (asset: Omit<EditorAsset, 'url'>) => Promise<EditorAsset>;
+  deleteAsset: (assetId: string) => Promise<void>;
   addMouthSet: (mouthSet: MouthSetAsset) => Promise<void>;
+  deleteMouthSet: (mouthSetId: string) => Promise<void>;
 
   // Clip Actions
   selectClip: (clipId: string | null, trackId?: TrackId | 'audio' | null) => void;
@@ -257,7 +267,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setProjectModalOpen: (isProjectModalOpen: boolean) => set({ isProjectModalOpen }),
 
   addAsset: async (asset) => {
-    const saved = await dbSaveAsset(asset);
+    const { project } = get();
+    const assetToSave = { ...asset, projectId: asset.projectId || project.id };
+    const saved = await dbSaveAsset(assetToSave);
     if (saved.type === 'audio') {
       audioEngine.preloadAudio(saved.id, saved.blob, saved.url);
     }
@@ -269,12 +281,32 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     return saved;
   },
 
+  deleteAsset: async (assetId: string) => {
+    await deleteAssetFromDb(assetId);
+    set((state) => {
+      const nextAssets = new Map(state.assets);
+      nextAssets.delete(assetId);
+      return { assets: nextAssets };
+    });
+  },
+
   addMouthSet: async (mouthSet) => {
-    await dbSaveMouthSet(mouthSet);
+    const { project } = get();
+    const setWithProject = { ...mouthSet, projectId: mouthSet.projectId || project.id };
+    await dbSaveMouthSet(setWithProject);
     set((state) => {
       const next = new Map(state.mouthSets);
-      next.set(mouthSet.id, mouthSet);
+      next.set(setWithProject.id, setWithProject);
       return { mouthSets: next };
+    });
+  },
+
+  deleteMouthSet: async (mouthSetId: string) => {
+    await deleteMouthSetFromDb(mouthSetId);
+    set((state) => {
+      const nextSets = new Map(state.mouthSets);
+      nextSets.delete(mouthSetId);
+      return { mouthSets: nextSets };
     });
   },
 

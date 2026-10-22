@@ -17,6 +17,8 @@ export const AssetPanel: React.FC = () => {
   const {
     assets,
     mouthSets,
+    deleteAsset,
+    deleteMouthSet,
     currentTime,
     addVisualClip,
     addAudioClip,
@@ -24,9 +26,19 @@ export const AssetPanel: React.FC = () => {
   } = useEditorStore();
 
   const [activeTab, setActiveTab] = useState<'media' | 'projectAssets'>('media');
+  const [scope, setScope] = useState<'project' | 'all'>('project');
 
-  const assetList = Array.from(assets.values());
-  const mouthSetList = Array.from(mouthSets.values());
+  const allAssets = Array.from(assets.values());
+  const assetList =
+    scope === 'project'
+      ? allAssets.filter((a) => !a.projectId || a.projectId === project.id)
+      : allAssets;
+
+  const allMouthSets = Array.from(mouthSets.values());
+  const mouthSetList =
+    scope === 'project'
+      ? allMouthSets.filter((m) => !m.projectId || m.projectId === project.id)
+      : allMouthSets;
 
   const handleAddImageToTimeline = (asset: EditorAsset, targetTrack: TrackId = 'V1') => {
     // Fit to canvas screen by default while maintaining aspect ratio and centering
@@ -100,6 +112,35 @@ export const AssetPanel: React.FC = () => {
         </button>
       </div>
 
+      {/* Scope Selector */}
+      <div className="flex items-center justify-between px-3 py-1.5 bg-editor-panel border-b border-editor-border text-[11px]">
+        <span className="text-gray-400 font-medium">Scope:</span>
+        <div className="flex bg-editor-subpanel rounded p-0.5 border border-editor-border">
+          <button
+            type="button"
+            onClick={() => setScope('project')}
+            className={`px-2 py-0.5 rounded transition-colors ${
+              scope === 'project'
+                ? 'bg-blue-600 text-white font-medium'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            This Project
+          </button>
+          <button
+            type="button"
+            onClick={() => setScope('all')}
+            className={`px-2 py-0.5 rounded transition-colors ${
+              scope === 'all'
+                ? 'bg-blue-600 text-white font-medium'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            All Library
+          </button>
+        </div>
+      </div>
+
       {/* Content Area */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {activeTab === 'media' && (
@@ -152,6 +193,20 @@ export const AssetPanel: React.FC = () => {
                       >
                         <PlusCircle className="w-6 h-6 text-blue-400" />
                       </button>
+
+                      {/* Delete asset button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(`Delete "${asset.name}"?`)) {
+                            deleteAsset(asset.id);
+                          }
+                        }}
+                        title="Delete Asset from Storage"
+                        className="absolute top-1 right-1 p-1 rounded bg-black/70 hover:bg-red-700 text-gray-300 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
 
                     {/* Asset Name & Meta */}
@@ -191,10 +246,23 @@ export const AssetPanel: React.FC = () => {
                       className="bg-editor-subpanel border border-editor-border rounded p-2.5"
                     >
                       <div className="flex items-center justify-between mb-1.5">
-                        <span className="font-medium text-gray-200">{mSet.name}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-900/60 text-purple-300">
-                          {spriteKeys.length} shapes
-                        </span>
+                        <span className="font-medium text-gray-200 truncate pr-2">{mSet.name}</span>
+                        <div className="flex items-center space-x-1.5 flex-shrink-0">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-900/60 text-purple-300">
+                            {spriteKeys.length} shapes
+                          </span>
+                          <button
+                            onClick={() => {
+                              if (confirm(`Delete mouth set "${mSet.name}"?`)) {
+                                deleteMouthSet(mSet.id);
+                              }
+                            }}
+                            title="Delete Mouth Set"
+                            className="p-1 rounded hover:bg-red-950 text-gray-400 hover:text-red-300 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
 
                       {/* Mini sprite grid preview */}

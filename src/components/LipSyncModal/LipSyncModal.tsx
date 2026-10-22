@@ -99,8 +99,34 @@ export const LipSyncModal: React.FC = () => {
   const sheetInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
 
-  const imageAssets = Array.from(assets.values()).filter((a) => a.type === 'image');
-  const audioAssets = Array.from(assets.values()).filter((a) => a.type === 'audio');
+  const [showAllLibraryAssets, setShowAllLibraryAssets] = useState<boolean>(false);
+
+  // Reset modal state whenever project changes
+  const lastProjectIdRef = useRef<string>(project.id);
+  useEffect(() => {
+    if (project.id !== lastProjectIdRef.current) {
+      lastProjectIdRef.current = project.id;
+      setSelectedCharId('');
+      setSelectedSheetId('');
+      setSelectedAudioId('');
+      setExtractedMouthSet(null);
+      setGeneratedCues([]);
+      setCharMouthAnchor({ x: 0.5, y: 0.5 });
+      setMouthSpriteAnchor({ anchorX: 0.5, anchorY: 0.5 });
+      setMouthScale(0.25);
+      setMouthRotation(0);
+      setDialogueText('Hello world, welcome to Cartoon Speaks Version 2!');
+      setModalPlaying(false);
+      setModalTime(0);
+    }
+  }, [project.id]);
+
+  const imageAssets = Array.from(assets.values()).filter(
+    (a) => a.type === 'image' && (showAllLibraryAssets || !a.projectId || a.projectId === project.id)
+  );
+  const audioAssets = Array.from(assets.values()).filter(
+    (a) => a.type === 'audio' && (showAllLibraryAssets || !a.projectId || a.projectId === project.id)
+  );
 
   const selectedCharAsset = assets.get(selectedCharId);
   const selectedSheetAsset = assets.get(selectedSheetId);
@@ -555,12 +581,22 @@ export const LipSyncModal: React.FC = () => {
     setCanvasCursor('crosshair');
   };
 
-  // Scroll wheel on canvas to scale mouth up/down smoothly
-  const handleCanvasWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    const delta = e.deltaY < 0 ? 0.015 : -0.015;
-    setMouthScale((prev) => Math.max(0.06, Math.min(0.8, Number((prev + delta).toFixed(3)))));
-  };
+  // Scroll wheel on canvas to scale mouth up/down smoothly with non-passive listener
+  useEffect(() => {
+    const canvas = previewCanvasRef.current;
+    if (!canvas || !isLipSyncModalOpen) return;
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 0.015 : -0.015;
+      setMouthScale((prev) => Math.max(0.06, Math.min(0.8, Number((prev + delta).toFixed(3)))));
+    };
+
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      canvas.removeEventListener('wheel', onWheel);
+    };
+  }, [isLipSyncModalOpen]);
 
   // Upload handlers
   const handleDirectCharUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -794,6 +830,18 @@ export const LipSyncModal: React.FC = () => {
                 <span>{errorMessage}</span>
               </div>
             )}
+
+            {/* Library Scope Selector */}
+            <div className="flex items-center justify-between pb-1 border-b border-editor-border/40 text-[11px]">
+              <span className="text-gray-400">Media Source:</span>
+              <button
+                type="button"
+                onClick={() => setShowAllLibraryAssets(!showAllLibraryAssets)}
+                className="text-xs text-purple-400 hover:text-purple-300 underline font-medium"
+              >
+                {showAllLibraryAssets ? 'Showing All Saved Media' : 'Current Project Media'}
+              </button>
+            </div>
 
             {/* Input 1: Character Asset */}
             <div>
@@ -1324,7 +1372,6 @@ export const LipSyncModal: React.FC = () => {
                 onPointerDown={handleCanvasPointerDown}
                 onPointerMove={handleCanvasPointerMove}
                 onPointerUp={handleCanvasPointerUp}
-                onWheel={handleCanvasWheel}
                 style={{ cursor: canvasCursor }}
                 className="max-w-full max-h-full border border-editor-border rounded-lg bg-[#18191e] shadow-2xl select-none"
               />

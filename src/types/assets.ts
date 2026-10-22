@@ -2,6 +2,7 @@ export type AssetType = 'image' | 'audio' | 'mouthSheet';
 
 export interface EditorAsset {
   id: string;
+  projectId?: string;
   name: string;
   type: AssetType;
   mimeType: string;
@@ -44,6 +45,7 @@ export interface MouthSprite {
 
 export interface MouthSetAsset {
   id: string;
+  projectId?: string;
   name: string;
   sourceAssetId: string;
   sprites: Record<string, MouthSprite>; // keyed by shape label e.g. 'A', 'B', 'C'

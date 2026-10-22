@@ -4,6 +4,7 @@ import { EditorProject } from '../../types/project';
 
 export interface StoredAssetRecord {
   id: string;
+  projectId?: string;
   name: string;
   type: string;
   mimeType: string;
@@ -16,6 +17,7 @@ export interface StoredAssetRecord {
 
 export interface StoredMouthSetRecord {
   id: string;
+  projectId?: string;
   name: string;
   sourceAssetId: string;
   spritesJson: string; // Serialized sprites data
@@ -39,6 +41,11 @@ class CartoonDatabase extends Dexie {
     this.version(1).stores({
       assets: 'id, type, name, createdAt',
       mouthSets: 'id, sourceAssetId, createdAt',
+      projects: 'id, name, updatedAt',
+    });
+    this.version(2).stores({
+      assets: 'id, projectId, type, name, createdAt',
+      mouthSets: 'id, projectId, sourceAssetId, createdAt',
       projects: 'id, name, updatedAt',
     });
   }
@@ -94,6 +101,7 @@ export async function getImageElement(assetId: string, url: string): Promise<HTM
 export async function saveAsset(asset: Omit<EditorAsset, 'url'>): Promise<EditorAsset> {
   await db.assets.put({
     id: asset.id,
+    projectId: asset.projectId,
     name: asset.name,
     type: asset.type,
     mimeType: asset.mimeType,
@@ -115,6 +123,7 @@ export async function loadAllAssets(): Promise<EditorAsset[]> {
   const records = await db.assets.toArray();
   return records.map((r) => ({
     id: r.id,
+    projectId: r.projectId,
     name: r.name,
     type: r.type as EditorAsset['type'],
     mimeType: r.mimeType,
@@ -133,6 +142,7 @@ export async function loadAllAssets(): Promise<EditorAsset[]> {
 export async function saveMouthSet(mouthSet: MouthSetAsset): Promise<void> {
   await db.mouthSets.put({
     id: mouthSet.id,
+    projectId: mouthSet.projectId,
     name: mouthSet.name,
     sourceAssetId: mouthSet.sourceAssetId,
     spritesJson: JSON.stringify(mouthSet.sprites),
@@ -147,11 +157,27 @@ export async function loadAllMouthSets(): Promise<MouthSetAsset[]> {
   const records = await db.mouthSets.toArray();
   return records.map((r) => ({
     id: r.id,
+    projectId: r.projectId,
     name: r.name,
     sourceAssetId: r.sourceAssetId,
     sprites: JSON.parse(r.spritesJson),
     createdAt: r.createdAt,
   }));
+}
+
+/**
+ * Deletes an asset permanently from IndexedDB and revokes cached object URL.
+ */
+export async function deleteAssetFromDb(id: string): Promise<void> {
+  revokeCachedObjectUrl(id);
+  await db.assets.delete(id);
+}
+
+/**
+ * Deletes a mouth set from IndexedDB.
+ */
+export async function deleteMouthSetFromDb(id: string): Promise<void> {
+  await db.mouthSets.delete(id);
 }
 
 /**
@@ -184,8 +210,16 @@ export async function listStoredProjects(): Promise<Array<{ id: string; name: st
 }
 
 /**
- * Deletes a project from IndexedDB.
+ * Deletes a project from IndexedDB and all its associated assets.
  */
 export async function deleteProjectFromDb(id: string): Promise<void> {
   await db.projects.delete(id);
+  try {
+    const projectAssets = await db.assets.where('projectId').equals(id).toArray();
+    for (const a of projectAssets) {
+      revokeCachedObjectUrl(a.id);
+    }
+    await db.assets.where('projectId').equals(id).delete();
+    await db.mouthSets.where('projectId').equals(id).delete();
+  } catch (_) {}
 }
