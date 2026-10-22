@@ -121,11 +121,29 @@ export const LipSyncModal: React.FC = () => {
     }
   }, [project.id]);
 
+  // If not showing all library assets, automatically deselect assets from other projects
+  useEffect(() => {
+    if (!showAllLibraryAssets) {
+      if (selectedCharId) {
+        const a = assets.get(selectedCharId);
+        if (!a || a.projectId !== project.id) setSelectedCharId('');
+      }
+      if (selectedSheetId) {
+        const a = assets.get(selectedSheetId);
+        if (!a || a.projectId !== project.id) setSelectedSheetId('');
+      }
+      if (selectedAudioId) {
+        const a = assets.get(selectedAudioId);
+        if (!a || a.projectId !== project.id) setSelectedAudioId('');
+      }
+    }
+  }, [showAllLibraryAssets, project.id, assets, selectedCharId, selectedSheetId, selectedAudioId]);
+
   const imageAssets = Array.from(assets.values()).filter(
-    (a) => a.type === 'image' && (showAllLibraryAssets || !a.projectId || a.projectId === project.id)
+    (a) => a.type === 'image' && (showAllLibraryAssets ? true : a.projectId === project.id)
   );
   const audioAssets = Array.from(assets.values()).filter(
-    (a) => a.type === 'audio' && (showAllLibraryAssets || !a.projectId || a.projectId === project.id)
+    (a) => a.type === 'audio' && (showAllLibraryAssets ? true : a.projectId === project.id)
   );
 
   const selectedCharAsset = assets.get(selectedCharId);
@@ -625,6 +643,7 @@ export const LipSyncModal: React.FC = () => {
       blob: file,
       width,
       height,
+      projectId: project.id,
       createdAt: Date.now(),
     });
     setSelectedCharId(asset.id);
@@ -656,6 +675,7 @@ export const LipSyncModal: React.FC = () => {
       blob: file,
       width,
       height,
+      projectId: project.id,
       createdAt: Date.now(),
     });
     setSelectedSheetId(asset.id);
@@ -679,6 +699,7 @@ export const LipSyncModal: React.FC = () => {
       mimeType: file.type || 'audio/wav',
       blob: file,
       duration: dur,
+      projectId: project.id,
       createdAt: Date.now(),
     });
     setSelectedAudioId(asset.id);

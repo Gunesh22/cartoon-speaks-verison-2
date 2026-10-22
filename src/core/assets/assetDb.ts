@@ -181,6 +181,18 @@ export async function deleteMouthSetFromDb(id: string): Promise<void> {
 }
 
 /**
+ * Permanently removes all assets and mouth sets from IndexedDB and revokes object URLs.
+ */
+export async function clearAllAssetsFromDb(): Promise<void> {
+  const all = await db.assets.toArray();
+  for (const a of all) {
+    revokeCachedObjectUrl(a.id);
+  }
+  await db.assets.clear();
+  await db.mouthSets.clear();
+}
+
+/**
  * Saves an EditorProject to IndexedDB.
  */
 export async function saveProjectToDb(project: EditorProject): Promise<void> {

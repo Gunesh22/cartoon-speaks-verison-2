@@ -73,6 +73,7 @@ export const Toolbar: React.FC = () => {
             blob: file,
             width: img.naturalWidth,
             height: img.naturalHeight,
+            projectId: project.id,
             createdAt: Date.now(),
           });
           URL.revokeObjectURL(objectUrl);
@@ -114,6 +115,7 @@ export const Toolbar: React.FC = () => {
         mimeType: file.type || 'audio/wav',
         blob: file,
         duration,
+        projectId: project.id,
         createdAt: Date.now(),
       });
     }

@@ -314,3 +314,28 @@ Platform: Web / Windows (Target: Brave, Chrome, Edge)
 - **Root Cause**: React synthetic `onWheel` event handlers are treated as passive event listeners by modern Chromium browsers. Calling `e.preventDefault()` inside a passive listener is disallowed and throws an error.
 - **Fix Applied**: Removed synthetic `onWheel` from the canvas JSX element and registered an explicit DOM event listener via `useEffect` with `{ passive: false }`. This permits `e.preventDefault()` to smoothly scale the mouth without window scrolling or console errors.
 - **Verification Status**: Verified (44/44 tests passing, build 0 errors).
+
+
+---
+
+### BUG-019: Loose Fallback in Project Filter Caused Legacy Assets to Leak into New Projects
+- **Severity**: High
+- **Affected Files**:
+  - `src/components/AssetPanel/AssetPanel.tsx`
+  - `src/components/LipSyncModal/LipSyncModal.tsx`
+  - `src/components/Toolbar/Toolbar.tsx`
+  - `src/core/assets/assetDb.ts`
+  - `src/state/editorStore.ts`
+  - `tests/projectIsolation.test.ts`
+- **Observable Symptoms**: Creating a new project still showed images and audio files from previous projects in the Asset Panel and Lip-Sync Modal.
+- **Root Cause**:
+  1. The asset filter in `AssetPanel` and `LipSyncModal` used `!a.projectId || a.projectId === project.id`. Because older/legacy assets stored in IndexedDB had `projectId === undefined`, the `!a.projectId` condition always evaluated to `true`, causing every previous photo and audio to be displayed in every newly created project.
+  2. LipSyncModal did not automatically de-select previous assets if the modal was opened while an asset from another project was still referenced.
+- **Fix Applied**:
+  1. Updated `AssetPanel` to use strict equality: `a.projectId === project.id` (and `m.projectId === project.id`). New projects now start with an empty media bin (0 items) by default.
+  2. Updated `LipSyncModal` dropdown filters to strict equality `showAllLibraryAssets ? true : a.projectId === project.id`.
+  3. Added auto-deselect in `LipSyncModal` to clear invalid selections if they do not belong to the current project.
+  4. Explicitly assigned `projectId: project.id` during file uploads in `Toolbar` and `LipSyncModal`.
+  5. Added `clearAllAssets` feature in `AssetPanel` and `editorStore` allowing users to wipe legacy or unused media from browser storage with a single click.
+- **Regression Test**: `tests/projectIsolation.test.ts` (2 tests)
+- **Verification Status**: Verified (46/46 tests passing, build 0 errors).

@@ -20,6 +20,7 @@ import {
   saveMouthSet as dbSaveMouthSet,
   deleteAssetFromDb,
   deleteMouthSetFromDb,
+  clearAllAssetsFromDb,
 } from '../core/assets/assetDb';
 import { audioEngine } from '../core/audio/audioEngine';
 
@@ -74,6 +75,7 @@ interface EditorState {
   deleteAsset: (assetId: string) => Promise<void>;
   addMouthSet: (mouthSet: MouthSetAsset) => Promise<void>;
   deleteMouthSet: (mouthSetId: string) => Promise<void>;
+  clearAllAssets: () => Promise<void>;
 
   // Clip Actions
   selectClip: (clipId: string | null, trackId?: TrackId | 'audio' | null) => void;
@@ -178,13 +180,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   newProject: (name = 'New Project', width = 1920, height = 1080, fps = 30) => {
     get().pushHistory();
+    audioEngine.stop();
     const proj = createDefaultProject(name, width, height, fps);
     set({
       project: proj,
       selectedClipId: null,
       selectedClipTrackId: null,
       currentTime: 0,
+      isPlaying: false,
       currentView: 'editor',
+      isLipSyncModalOpen: false,
+      isExportModalOpen: false,
+      isProjectModalOpen: false,
     });
   },
 
@@ -307,6 +314,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const nextSets = new Map(state.mouthSets);
       nextSets.delete(mouthSetId);
       return { mouthSets: nextSets };
+    });
+  },
+
+  clearAllAssets: async () => {
+    await clearAllAssetsFromDb();
+    set({
+      assets: new Map(),
+      mouthSets: new Map(),
     });
   },
 

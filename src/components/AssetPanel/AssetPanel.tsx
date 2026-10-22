@@ -19,6 +19,7 @@ export const AssetPanel: React.FC = () => {
     mouthSets,
     deleteAsset,
     deleteMouthSet,
+    clearAllAssets,
     currentTime,
     addVisualClip,
     addAudioClip,
@@ -31,13 +32,13 @@ export const AssetPanel: React.FC = () => {
   const allAssets = Array.from(assets.values());
   const assetList =
     scope === 'project'
-      ? allAssets.filter((a) => !a.projectId || a.projectId === project.id)
+      ? allAssets.filter((a) => a.projectId === project.id)
       : allAssets;
 
   const allMouthSets = Array.from(mouthSets.values());
   const mouthSetList =
     scope === 'project'
-      ? allMouthSets.filter((m) => !m.projectId || m.projectId === project.id)
+      ? allMouthSets.filter((m) => m.projectId === project.id)
       : allMouthSets;
 
   const handleAddImageToTimeline = (asset: EditorAsset, targetTrack: TrackId = 'V1') => {
@@ -114,31 +115,48 @@ export const AssetPanel: React.FC = () => {
 
       {/* Scope Selector */}
       <div className="flex items-center justify-between px-3 py-1.5 bg-editor-panel border-b border-editor-border text-[11px]">
-        <span className="text-gray-400 font-medium">Scope:</span>
-        <div className="flex bg-editor-subpanel rounded p-0.5 border border-editor-border">
-          <button
-            type="button"
-            onClick={() => setScope('project')}
-            className={`px-2 py-0.5 rounded transition-colors ${
-              scope === 'project'
-                ? 'bg-blue-600 text-white font-medium'
-                : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            This Project
-          </button>
-          <button
-            type="button"
-            onClick={() => setScope('all')}
-            className={`px-2 py-0.5 rounded transition-colors ${
-              scope === 'all'
-                ? 'bg-blue-600 text-white font-medium'
-                : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            All Library
-          </button>
+        <div className="flex items-center space-x-1.5">
+          <span className="text-gray-400 font-medium">Scope:</span>
+          <div className="flex bg-editor-subpanel rounded p-0.5 border border-editor-border">
+            <button
+              type="button"
+              onClick={() => setScope('project')}
+              className={`px-2 py-0.5 rounded transition-colors ${
+                scope === 'project'
+                  ? 'bg-blue-600 text-white font-medium'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              This Project
+            </button>
+            <button
+              type="button"
+              onClick={() => setScope('all')}
+              className={`px-2 py-0.5 rounded transition-colors ${
+                scope === 'all'
+                  ? 'bg-blue-600 text-white font-medium'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              All Library ({allAssets.length})
+            </button>
+          </div>
         </div>
+
+        {allAssets.length > 0 && scope === 'all' && (
+          <button
+            type="button"
+            onClick={() => {
+              if (confirm('Delete all stored media from the browser library? This removes previous project media.')) {
+                clearAllAssets();
+              }
+            }}
+            title="Clear all stored media in browser storage"
+            className="text-[10px] text-red-400 hover:text-red-300 hover:underline px-1 py-0.5"
+          >
+            Clear All
+          </button>
+        )}
       </div>
 
       {/* Content Area */}
