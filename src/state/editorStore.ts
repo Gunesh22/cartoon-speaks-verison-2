@@ -42,6 +42,7 @@ interface EditorState {
   isLipSyncModalOpen: boolean;
   isExportModalOpen: boolean;
   isProjectModalOpen: boolean;
+  isPromptModalOpen: boolean;
   history: EditorProject[];
   historyIndex: number;
 
@@ -69,6 +70,7 @@ interface EditorState {
   setLipSyncModalOpen: (open: boolean) => void;
   setExportModalOpen: (open: boolean) => void;
   setProjectModalOpen: (open: boolean) => void;
+  setPromptModalOpen: (open: boolean) => void;
   
   // Asset Actions
   addAsset: (asset: Omit<EditorAsset, 'url'>) => Promise<EditorAsset>;
@@ -113,6 +115,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   isLipSyncModalOpen: false,
   isExportModalOpen: false,
   isProjectModalOpen: false,
+  isPromptModalOpen: false,
   history: [],
   historyIndex: -1,
 
@@ -272,6 +275,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setExportModalOpen: (isExportModalOpen: boolean) => set({ isExportModalOpen }),
 
   setProjectModalOpen: (isProjectModalOpen: boolean) => set({ isProjectModalOpen }),
+  setPromptModalOpen: (isPromptModalOpen: boolean) => set({ isPromptModalOpen }),
 
   addAsset: async (asset) => {
     const { project } = get();

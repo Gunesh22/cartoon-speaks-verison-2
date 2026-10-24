@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useEditorStore } from '../../state/editorStore';
 import {
   Image as ImageIcon,
@@ -8,6 +8,8 @@ import {
   Trash2,
   PlusCircle,
   Clock,
+  Upload,
+  HardDrive,
 } from 'lucide-react';
 import { EditorAsset, MouthSetAsset } from '../../types/assets';
 import { TrackId } from '../../types/timeline';
@@ -20,6 +22,7 @@ export const AssetPanel: React.FC = () => {
     deleteAsset,
     deleteMouthSet,
     clearAllAssets,
+    addAsset,
     currentTime,
     addVisualClip,
     addAudioClip,
@@ -28,6 +31,8 @@ export const AssetPanel: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'media' | 'projectAssets'>('media');
   const [scope, setScope] = useState<'project' | 'all'>('project');
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const allAssets = Array.from(assets.values());
   const assetList =
@@ -42,7 +47,6 @@ export const AssetPanel: React.FC = () => {
       : allMouthSets;
 
   const handleAddImageToTimeline = (asset: EditorAsset, targetTrack: TrackId = 'V1') => {
-    // Fit to canvas screen by default while maintaining aspect ratio and centering
     const baseW = asset.width || project.width;
     const baseH = asset.height || project.height;
     const fit = calculateFitToScreen(baseW, baseH, project.width, project.height, 'contain');
@@ -51,7 +55,7 @@ export const AssetPanel: React.FC = () => {
       id: `clip_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       assetId: asset.id,
       start: currentTime,
-      duration: 5.0, // 5s default
+      duration: 5.0,
       x: fit.x,
       y: fit.y,
       width: fit.width,
@@ -85,60 +89,128 @@ export const AssetPanel: React.FC = () => {
     }));
   };
 
+  const handleQuickUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const isImg = file.type.startsWith('image/');
+      let width: number | undefined;
+      let height: number | undefined;
+      let duration: number | undefined = isImg ? undefined : 5;
+
+      if (isImg) {
+        const img = new Image();
+        const objectUrl = URL.createObjectURL(file);
+        await new Promise<void>((resolve) => {
+          img.onload = () => {
+            width = img.naturalWidth;
+            height = img.naturalHeight;
+            URL.revokeObjectURL(objectUrl);
+            resolve();
+          };
+          img.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            resolve();
+          };
+          img.src = objectUrl;
+        });
+      } else {
+        try {
+          const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+          const ctx = new AudioCtx();
+          const buffer = await ctx.decodeAudioData(await file.arrayBuffer());
+          duration = buffer.duration;
+          ctx.close().catch(() => {});
+        } catch {
+          // Fallback duration
+        }
+      }
+
+      await addAsset({
+        id: `asset_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        name: file.name,
+        type: isImg ? 'image' : 'audio',
+        mimeType: file.type || (isImg ? 'image/png' : 'audio/wav'),
+        blob: file,
+        width,
+        height,
+        duration,
+        projectId: project.id,
+        createdAt: Date.now(),
+      });
+    }
+
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   return (
-    <aside className="w-64 bg-editor-panel border-r border-editor-border flex flex-col h-full select-none text-xs">
+    <aside className="w-64 bg-editor-panel border-r border-editor-border flex flex-col h-full select-none text-xs shrink-0">
+      {/* Hidden input for quick import in empty state */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept="image/*,audio/*"
+        className="hidden"
+        onChange={handleQuickUpload}
+      />
+
       {/* Tab Switcher */}
-      <div className="flex border-b border-editor-border bg-editor-subpanel">
+      <div className="flex border-b border-editor-border bg-editor-panel/50 p-1">
         <button
           onClick={() => setActiveTab('media')}
-          className={`flex-1 py-2 text-center font-medium border-b-2 flex items-center justify-center space-x-1.5 transition-colors ${
+          className={`flex-1 py-1.5 rounded-editor-sm text-center font-medium flex items-center justify-center space-x-1.5 transition-all ${
             activeTab === 'media'
-              ? 'border-blue-500 text-blue-400 bg-editor-panel'
-              : 'border-transparent text-gray-400 hover:text-gray-200'
+              ? 'bg-editor-subpanel text-editor-text shadow-sm border border-editor-border/60'
+              : 'text-editor-secondary hover:text-editor-text hover:bg-editor-hover/50'
           }`}
         >
-          <Layers className="w-3.5 h-3.5" />
-          <span>Media ({assetList.length})</span>
+          <Layers className={`w-3.5 h-3.5 ${activeTab === 'media' ? 'text-editor-accent' : 'text-editor-muted'}`} />
+          <span>Media</span>
+          <span className="text-[10px] text-editor-muted font-mono">({assetList.length})</span>
         </button>
         <button
           onClick={() => setActiveTab('projectAssets')}
-          className={`flex-1 py-2 text-center font-medium border-b-2 flex items-center justify-center space-x-1.5 transition-colors ${
+          className={`flex-1 py-1.5 rounded-editor-sm text-center font-medium flex items-center justify-center space-x-1.5 transition-all ${
             activeTab === 'projectAssets'
-              ? 'border-purple-500 text-purple-400 bg-editor-panel'
-              : 'border-transparent text-gray-400 hover:text-gray-200'
+              ? 'bg-editor-subpanel text-editor-text shadow-sm border border-editor-border/60'
+              : 'text-editor-secondary hover:text-editor-text hover:bg-editor-hover/50'
           }`}
         >
-          <Smile className="w-3.5 h-3.5" />
-          <span>Mouth Sets ({mouthSetList.length})</span>
+          <Smile className={`w-3.5 h-3.5 ${activeTab === 'projectAssets' ? 'text-editor-accent' : 'text-editor-muted'}`} />
+          <span>Mouth Sets</span>
+          <span className="text-[10px] text-editor-muted font-mono">({mouthSetList.length})</span>
         </button>
       </div>
 
       {/* Scope Selector */}
       <div className="flex items-center justify-between px-3 py-1.5 bg-editor-panel border-b border-editor-border text-[11px]">
         <div className="flex items-center space-x-1.5">
-          <span className="text-gray-400 font-medium">Scope:</span>
-          <div className="flex bg-editor-subpanel rounded p-0.5 border border-editor-border">
+          <span className="text-editor-muted font-medium text-[10px] uppercase tracking-wider">Scope</span>
+          <div className="flex bg-editor-subpanel rounded-editor-sm p-0.5 border border-editor-border">
             <button
               type="button"
               onClick={() => setScope('project')}
-              className={`px-2 py-0.5 rounded transition-colors ${
+              className={`px-2 py-0.5 rounded text-[10px] transition-colors ${
                 scope === 'project'
-                  ? 'bg-blue-600 text-white font-medium'
-                  : 'text-gray-400 hover:text-white'
+                  ? 'bg-editor-hover text-editor-text font-medium shadow-sm'
+                  : 'text-editor-muted hover:text-editor-text'
               }`}
             >
-              This Project
+              Project
             </button>
             <button
               type="button"
               onClick={() => setScope('all')}
-              className={`px-2 py-0.5 rounded transition-colors ${
+              className={`px-2 py-0.5 rounded text-[10px] transition-colors ${
                 scope === 'all'
-                  ? 'bg-blue-600 text-white font-medium'
-                  : 'text-gray-400 hover:text-white'
+                  ? 'bg-editor-hover text-editor-text font-medium shadow-sm'
+                  : 'text-editor-muted hover:text-editor-text'
               }`}
             >
-              All Library ({allAssets.length})
+              Library ({allAssets.length})
             </button>
           </div>
         </div>
@@ -147,12 +219,12 @@ export const AssetPanel: React.FC = () => {
           <button
             type="button"
             onClick={() => {
-              if (confirm('Delete all stored media from the browser library? This removes previous project media.')) {
+              if (confirm('Clear all stored media from the browser library?')) {
                 clearAllAssets();
               }
             }}
             title="Clear all stored media in browser storage"
-            className="text-[10px] text-red-400 hover:text-red-300 hover:underline px-1 py-0.5"
+            className="text-[10px] text-editor-danger hover:underline px-1 py-0.5 transition-colors"
           >
             Clear All
           </button>
@@ -160,16 +232,25 @@ export const AssetPanel: React.FC = () => {
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+      <div className="flex-1 overflow-y-auto p-2.5 space-y-2.5">
         {activeTab === 'media' && (
           <>
             {assetList.length === 0 ? (
-              <div className="h-48 border border-dashed border-editor-border rounded flex flex-col items-center justify-center p-4 text-center text-gray-400">
-                <ImageIcon className="w-8 h-8 mb-2 opacity-50" />
-                <p className="font-medium text-gray-300">No media imported</p>
-                <p className="text-[11px] mt-1 text-gray-500">
-                  Use "Import Image" or "Import Audio" in toolbar
+              <div className="h-56 border border-dashed border-editor-border rounded-editor-lg bg-editor-surface/40 flex flex-col items-center justify-center p-4 text-center">
+                <div className="w-10 h-10 rounded-full bg-editor-subpanel border border-editor-border flex items-center justify-center mb-2.5 text-editor-muted">
+                  <ImageIcon className="w-5 h-5 opacity-60" />
+                </div>
+                <p className="font-medium text-editor-text text-xs">No media assets</p>
+                <p className="text-[11px] text-editor-muted mt-1 max-w-[170px] leading-relaxed">
+                  Import character images or voice audio files to edit
                 </p>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="mt-3 px-3 py-1.5 rounded-editor-md bg-editor-subpanel hover:bg-editor-hover border border-editor-border text-editor-text text-[11px] font-medium flex items-center space-x-1.5 shadow-sm transition-colors"
+                >
+                  <Upload className="w-3 h-3 text-editor-accent" />
+                  <span>Import Media</span>
+                </button>
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-2">
@@ -178,10 +259,10 @@ export const AssetPanel: React.FC = () => {
                     key={asset.id}
                     draggable
                     onDragStart={(e) => handleDragStart(e, asset)}
-                    className="group relative bg-editor-subpanel border border-editor-border rounded p-1.5 hover:border-blue-500 cursor-grab active:cursor-grabbing transition-colors"
+                    className="group relative bg-editor-subpanel border border-editor-border rounded-editor-md p-1.5 hover:border-editor-accent/60 cursor-grab active:cursor-grabbing transition-all shadow-sm"
                   >
-                    {/* Thumbnail / Icon */}
-                    <div className="w-full h-24 bg-editor-bg rounded overflow-hidden flex items-center justify-center relative">
+                    {/* Thumbnail / Icon Container */}
+                    <div className="w-full h-24 bg-editor-surface rounded-editor-sm overflow-hidden flex items-center justify-center relative border border-editor-border/40">
                       {asset.type === 'image' ? (
                         <img
                           src={asset.url}
@@ -190,8 +271,8 @@ export const AssetPanel: React.FC = () => {
                         />
                       ) : (
                         <div className="flex flex-col items-center justify-center text-amber-400">
-                          <Music className="w-8 h-8 mb-1" />
-                          <span className="text-[10px] text-gray-400">
+                          <Music className="w-7 h-7 mb-1 opacity-90" />
+                          <span className="text-[10px] text-editor-muted font-mono">
                             {asset.duration ? `${asset.duration.toFixed(1)}s` : 'Audio'}
                           </span>
                         </div>
@@ -207,9 +288,9 @@ export const AssetPanel: React.FC = () => {
                           }
                         }}
                         title="Add to Timeline at Playhead"
-                        className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity"
+                        className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity backdrop-blur-[1px]"
                       >
-                        <PlusCircle className="w-6 h-6 text-blue-400" />
+                        <PlusCircle className="w-6 h-6 text-editor-accent hover:scale-110 transition-transform" />
                       </button>
 
                       {/* Delete asset button */}
@@ -221,20 +302,20 @@ export const AssetPanel: React.FC = () => {
                           }
                         }}
                         title="Delete Asset from Storage"
-                        className="absolute top-1 right-1 p-1 rounded bg-black/70 hover:bg-red-700 text-gray-300 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                        className="absolute top-1 right-1 p-1 rounded-editor-sm bg-black/70 hover:bg-editor-danger text-gray-300 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity z-10"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
 
                     {/* Asset Name & Meta */}
-                    <p className="mt-1 text-[11px] text-gray-300 truncate" title={asset.name}>
+                    <p className="mt-1.5 text-[11px] font-medium text-editor-text truncate" title={asset.name}>
                       {asset.name}
                     </p>
-                    <div className="flex items-center justify-between text-[10px] text-gray-500 mt-0.5">
-                      <span>{asset.type.toUpperCase()}</span>
+                    <div className="flex items-center justify-between text-[10px] text-editor-muted mt-0.5 font-mono">
+                      <span className="text-[9px] uppercase tracking-wider">{asset.type}</span>
                       {asset.width && asset.height && (
-                        <span>{asset.width}x{asset.height}</span>
+                        <span>{asset.width}×{asset.height}</span>
                       )}
                     </div>
                   </div>
@@ -247,11 +328,13 @@ export const AssetPanel: React.FC = () => {
         {activeTab === 'projectAssets' && (
           <>
             {mouthSetList.length === 0 ? (
-              <div className="h-48 border border-dashed border-editor-border rounded flex flex-col items-center justify-center p-4 text-center text-gray-400">
-                <Smile className="w-8 h-8 mb-2 opacity-50" />
-                <p className="font-medium text-gray-300">No mouth sets generated</p>
-                <p className="text-[11px] mt-1 text-gray-500">
-                  Click "Lip Sync" in toolbar to create a mouth set
+              <div className="h-56 border border-dashed border-editor-border rounded-editor-lg bg-editor-surface/40 flex flex-col items-center justify-center p-4 text-center">
+                <div className="w-10 h-10 rounded-full bg-editor-subpanel border border-editor-border flex items-center justify-center mb-2.5 text-editor-muted">
+                  <Smile className="w-5 h-5 opacity-60" />
+                </div>
+                <p className="font-medium text-editor-text text-xs">No mouth sets generated</p>
+                <p className="text-[11px] text-editor-muted mt-1 max-w-[170px] leading-relaxed">
+                  Use "Lip Sync" in the top toolbar to generate viseme mouth sets
                 </p>
               </div>
             ) : (
@@ -261,12 +344,14 @@ export const AssetPanel: React.FC = () => {
                   return (
                     <div
                       key={mSet.id}
-                      className="bg-editor-subpanel border border-editor-border rounded p-2.5"
+                      className="bg-editor-subpanel border border-editor-border rounded-editor-md p-2.5 shadow-sm"
                     >
                       <div className="flex items-center justify-between mb-1.5">
-                        <span className="font-medium text-gray-200 truncate pr-2">{mSet.name}</span>
-                        <div className="flex items-center space-x-1.5 flex-shrink-0">
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-900/60 text-purple-300">
+                        <span className="font-medium text-editor-text truncate pr-2 text-xs" title={mSet.name}>
+                          {mSet.name}
+                        </span>
+                        <div className="flex items-center space-x-1.5 shrink-0">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-editor-accent/15 text-editor-accent font-medium border border-editor-accent/25">
                             {spriteKeys.length} shapes
                           </span>
                           <button
@@ -276,7 +361,7 @@ export const AssetPanel: React.FC = () => {
                               }
                             }}
                             title="Delete Mouth Set"
-                            className="p-1 rounded hover:bg-red-950 text-gray-400 hover:text-red-300 transition-colors"
+                            className="p-1 rounded-editor-sm hover:bg-editor-danger/20 text-editor-muted hover:text-editor-danger transition-colors"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -284,17 +369,17 @@ export const AssetPanel: React.FC = () => {
                       </div>
 
                       {/* Mini sprite grid preview */}
-                      <div className="grid grid-cols-5 gap-1 bg-editor-bg p-1 rounded">
+                      <div className="grid grid-cols-5 gap-1 bg-editor-surface p-1.5 rounded-editor-sm border border-editor-border/40">
                         {spriteKeys.slice(0, 5).map((k) => (
                           <div key={k} className="flex flex-col items-center">
-                            <div className="w-8 h-8 bg-black/40 rounded flex items-center justify-center overflow-hidden">
+                            <div className="w-7 h-7 bg-black/40 rounded flex items-center justify-center overflow-hidden border border-editor-border/30">
                               <img
                                 src={mSet.sprites[k].url}
                                 alt={k}
                                 className="w-full h-full object-contain"
                               />
                             </div>
-                            <span className="text-[9px] text-gray-400 mt-0.5">{k}</span>
+                            <span className="text-[9px] font-mono text-editor-muted mt-0.5">{k}</span>
                           </div>
                         ))}
                       </div>
@@ -307,10 +392,10 @@ export const AssetPanel: React.FC = () => {
         )}
       </div>
 
-      {/* Asset Panel Footer / Tip */}
-      <div className="p-2.5 border-t border-editor-border bg-editor-panel text-gray-400 text-[11px] flex items-center space-x-1">
-        <Clock className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
-        <span className="truncate">Assets persist in local browser storage</span>
+      {/* Asset Panel Footer */}
+      <div className="p-2 border-t border-editor-border bg-editor-panel text-editor-muted text-[11px] flex items-center space-x-1.5 shrink-0">
+        <HardDrive className="w-3.5 h-3.5 text-editor-accent/80 shrink-0" />
+        <span className="truncate">Local browser storage active</span>
       </div>
     </aside>
   );

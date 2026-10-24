@@ -8,6 +8,7 @@ import { Timeline } from '../components/Timeline/Timeline';
 import { LipSyncModal } from '../components/LipSyncModal/LipSyncModal';
 import { ExportModal } from '../components/ExportModal/ExportModal';
 import { ProjectModal } from '../components/ProjectModal/ProjectModal';
+import { PromptModal } from '../components/PromptModal/PromptModal';
 import { ProjectHub } from '../components/ProjectHub/ProjectHub';
 
 export const EditorApp: React.FC = () => {
@@ -22,6 +23,7 @@ export const EditorApp: React.FC = () => {
       <div className="w-screen h-screen overflow-hidden bg-editor-bg text-editor-text font-sans">
         <ProjectHub />
         <ProjectModal />
+        <PromptModal />
       </div>
     );
   }
@@ -45,6 +47,7 @@ export const EditorApp: React.FC = () => {
       <LipSyncModal />
       <ExportModal />
       <ProjectModal />
+      <PromptModal />
     </div>
   );
 };

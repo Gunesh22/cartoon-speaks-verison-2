@@ -12,6 +12,8 @@ import {
   Volume2,
   Smile,
   Image as ImageIcon,
+  Sparkles,
+  Layers,
 } from 'lucide-react';
 import { audioEngine } from '../../core/audio/audioEngine';
 import { calculateFitToScreen } from '../../core/timeline/timelineMath';
@@ -58,10 +60,10 @@ export const Timeline: React.FC = () => {
     initialDuration: number;
   } | null>(null);
 
-  const totalWidth = Math.max(800, project.duration * timelineZoom + 250);
+  const totalWidth = Math.max(900, project.duration * timelineZoom + 300);
   const trackList: TrackId[] = ['V4', 'V3', 'V2', 'V1'];
 
-  // Smooth 60fps playback animation frame loop (does not tear down every 50ms!)
+  // Smooth 60fps playback animation frame loop
   useEffect(() => {
     let animId: number;
     let lastTime = performance.now();
@@ -200,7 +202,6 @@ export const Timeline: React.FC = () => {
 
   const handleGlobalMouseUp = useCallback(() => {
     if (dragAction) {
-      // Commit action to undo history on mouse up
       pushHistory();
       setDragAction(null);
     }
@@ -284,48 +285,51 @@ export const Timeline: React.FC = () => {
   };
 
   return (
-    <div className="h-64 bg-editor-panel border-t border-editor-border flex flex-col select-none text-xs">
+    <div className="h-64 bg-editor-panel border-t border-editor-border flex flex-col select-none text-xs shrink-0">
       {/* Timeline Controls Header */}
-      <div className="h-9 border-b border-editor-border px-3 flex items-center justify-between bg-editor-subpanel">
-        {/* Left: Playback & Timecode */}
-        <div className="flex items-center space-x-3">
+      <div className="h-10 border-b border-editor-border px-3.5 flex items-center justify-between bg-editor-panel shrink-0">
+        {/* Left: Playback & Precision Timecode */}
+        <div className="flex items-center space-x-2.5">
           <button
             onClick={() => {
               stopPlayback();
               setCurrentTime(0);
             }}
             title="Rewind to Start"
-            className="p-1 rounded hover:bg-editor-panel text-gray-300"
+            className="w-7 h-7 rounded-editor-sm flex items-center justify-center text-editor-secondary hover:text-editor-text hover:bg-editor-hover active:bg-editor-active transition-colors"
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => togglePlay()}
-            className="p-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white"
+            className="w-7 h-7 rounded-editor-sm bg-editor-accentAction hover:bg-editor-accent text-white flex items-center justify-center shadow-sm transition-all active:scale-95"
+            title={isPlaying ? 'Pause' : 'Play'}
           >
-            {isPlaying ? <Pause className="w-3.5 h-3.5 fill-white" /> : <Play className="w-3.5 h-3.5 fill-white" />}
+            {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current ml-0.5" />}
           </button>
 
-          <div className="font-mono text-gray-200 text-xs tracking-wider bg-editor-bg px-2 py-0.5 rounded border border-editor-border">
-            {formatTimecode(currentTime)} <span className="text-gray-500">/ {formatTimecode(project.duration)}</span>
+          <div className="font-mono text-editor-text text-xs tracking-wider bg-editor-surface px-2.5 py-1 rounded-editor-sm border border-editor-border flex items-center space-x-1.5 shadow-inner">
+            <span className="font-semibold text-editor-text">{formatTimecode(currentTime)}</span>
+            <span className="text-editor-muted font-normal">/</span>
+            <span className="text-editor-muted">{formatTimecode(project.duration)}</span>
           </div>
         </div>
 
         {/* Center: Selected Clip Actions */}
         {selectedClipId && (
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-1.5 animate-in fade-in duration-100">
             <button
               onClick={() => duplicateClip(selectedClipId)}
               title="Duplicate Clip (Ctrl+D)"
-              className="px-2 py-1 rounded bg-editor-panel hover:bg-editor-border text-gray-300 flex items-center space-x-1 border border-editor-border"
+              className="h-7 px-2.5 rounded-editor-sm bg-editor-subpanel hover:bg-editor-hover text-editor-secondary hover:text-editor-text flex items-center space-x-1 border border-editor-border transition-colors text-[11px]"
             >
-              <Copy className="w-3 h-3" />
+              <Copy className="w-3 h-3 text-editor-accent" />
               <span>Duplicate</span>
             </button>
             <button
               onClick={() => removeClip(selectedClipId)}
               title="Delete Clip (Del)"
-              className="px-2 py-1 rounded bg-red-900/40 hover:bg-red-800/60 text-red-300 flex items-center space-x-1 border border-red-800/50"
+              className="h-7 px-2.5 rounded-editor-sm bg-editor-danger/10 hover:bg-editor-danger/20 text-editor-danger flex items-center space-x-1 border border-editor-danger/30 transition-colors text-[11px]"
             >
               <Trash2 className="w-3 h-3" />
               <span>Delete</span>
@@ -336,9 +340,9 @@ export const Timeline: React.FC = () => {
         {/* Right: Zoom controls */}
         <div className="flex items-center space-x-2">
           <button
-            onClick={() => setTimelineZoom(timelineZoom - 15)}
-            title="Zoom Out"
-            className="p-1 rounded hover:bg-editor-panel text-gray-300"
+            onClick={() => setTimelineZoom(Math.max(20, timelineZoom - 15))}
+            title="Zoom Out Timeline"
+            className="w-6 h-6 rounded flex items-center justify-center text-editor-secondary hover:text-editor-text hover:bg-editor-hover transition-colors"
           >
             <ZoomOut className="w-3.5 h-3.5" />
           </button>
@@ -348,12 +352,12 @@ export const Timeline: React.FC = () => {
             max="200"
             value={timelineZoom}
             onChange={(e) => setTimelineZoom(parseInt(e.target.value))}
-            className="w-20 accent-blue-500"
+            className="w-20"
           />
           <button
-            onClick={() => setTimelineZoom(timelineZoom + 15)}
-            title="Zoom In"
-            className="p-1 rounded hover:bg-editor-panel text-gray-300"
+            onClick={() => setTimelineZoom(Math.min(240, timelineZoom + 15))}
+            title="Zoom In Timeline"
+            className="w-6 h-6 rounded flex items-center justify-center text-editor-secondary hover:text-editor-text hover:bg-editor-hover transition-colors"
           >
             <ZoomIn className="w-3.5 h-3.5" />
           </button>
@@ -363,67 +367,84 @@ export const Timeline: React.FC = () => {
       {/* Main Timeline Workspace */}
       <div className="flex-1 flex overflow-hidden">
         {/* Track Headers Column (Fixed on Left) */}
-        <div className="w-28 bg-editor-panel border-r border-editor-border flex flex-col flex-shrink-0 z-10">
-          <div className="h-6 border-b border-editor-border bg-editor-subpanel px-2 flex items-center text-[10px] text-gray-500 uppercase font-semibold">
-            Layers
+        <div className="w-32 bg-editor-panel border-r border-editor-border flex flex-col shrink-0 z-10 shadow-sm">
+          {/* Header spacer aligned with ruler */}
+          <div className="h-6 border-b border-editor-border bg-editor-surface/80 px-2.5 flex items-center justify-between text-[10px] text-editor-muted uppercase font-semibold tracking-wider">
+            <span>Layers</span>
+            <Layers className="w-3 h-3 text-editor-muted" />
           </div>
+
+          {/* Visual Track Headers (V4 down to V1) */}
           {trackList.map((id) => (
             <div
               key={id}
-              className="h-10 border-b border-editor-border px-2 flex items-center justify-between bg-editor-panel/50 hover:bg-editor-subpanel/50 transition-colors"
+              className="h-10 border-b border-editor-border px-2.5 flex items-center justify-between bg-editor-panel/70 hover:bg-editor-hover/40 transition-colors"
             >
-              <span className="font-semibold text-gray-300 text-xs">{id}</span>
-              <span className="text-[10px] text-gray-500">
+              <div className="flex items-center space-x-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-editor-accent/70" />
+                <span className="font-semibold text-editor-text text-xs font-mono">{id}</span>
+              </div>
+              <span className="text-[10px] text-editor-muted font-medium">
                 {id === 'V4' ? 'Top' : id === 'V1' ? 'Base' : ''}
               </span>
             </div>
           ))}
-          {/* Audio Track Header */}
-          <div className="h-10 border-b border-editor-border px-2 flex items-center justify-between bg-editor-panel/80">
-            <span className="font-semibold text-amber-400 text-xs">Audio (A1)</span>
-            <Volume2 className="w-3.5 h-3.5 text-amber-500" />
+
+          {/* Audio Track Header (A1) */}
+          <div className="h-10 border-b border-editor-border px-2.5 flex items-center justify-between bg-editor-panel/90">
+            <div className="flex items-center space-x-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+              <span className="font-semibold text-amber-400 text-xs font-mono">A1 Audio</span>
+            </div>
+            <Volume2 className="w-3.5 h-3.5 text-amber-500/80" />
           </div>
         </div>
 
         {/* Tracks Content & Ruler (Scrollable horizontally) */}
-        <div ref={scrollContainerRef} className="flex-1 overflow-x-auto relative bg-[#17181c]">
+        <div ref={scrollContainerRef} className="flex-1 overflow-x-auto relative bg-[#131419]">
           <div style={{ width: totalWidth }} className="relative h-full">
             {/* Time Ruler */}
             <div
               ref={rulerRef}
               onMouseDown={handleRulerMouseDown}
-              className="h-6 border-b border-editor-border bg-editor-subpanel/80 cursor-pointer relative select-none"
+              className="h-6 border-b border-editor-border bg-editor-surface/80 cursor-pointer relative select-none"
             >
               {Array.from({ length: Math.ceil(project.duration) + 1 }).map((_, sec) => (
                 <div
                   key={sec}
-                  className="absolute top-0 bottom-0 border-l border-gray-600/60 pl-1 text-[9px] text-gray-400 font-mono"
+                  className="absolute top-0 bottom-0 border-l border-editor-border/80 pl-1 text-[9px] text-editor-muted font-mono flex items-center"
                   style={{ left: sec * timelineZoom }}
                 >
-                  {sec}s
+                  <span className="opacity-80">{sec}s</span>
                 </div>
               ))}
             </div>
 
-            {/* Playhead Vertical Line */}
+            {/* Playhead Precision Vertical Guide & Head */}
             <div
               className="absolute top-0 bottom-0 z-30 pointer-events-none"
               style={{ left: currentTime * timelineZoom }}
             >
-              <div className="w-3 h-3 bg-red-500 rotate-45 -translate-x-1.5 -translate-y-1 rounded-[1px] shadow-md pointer-events-auto cursor-ew-resize" />
-              <div className="w-px h-full bg-red-500 shadow" />
+              {/* Playhead Head (Ruby diamond) */}
+              <div className="w-3 h-3 bg-red-500 rotate-45 -translate-x-1.5 -translate-y-1 rounded-[1px] shadow-md pointer-events-auto cursor-ew-resize hover:scale-110 transition-transform" />
+              {/* Vertical hairline */}
+              <div className="w-px h-full bg-red-500/90 shadow-[0_0_4px_rgba(239,68,68,0.5)]" />
             </div>
 
             {/* Visual Track Lanes Container */}
             <div ref={tracksContainerRef}>
-              {trackList.map((trackId) => {
+              {trackList.map((trackId, idx) => {
                 const track = project.tracks.find((t) => t.id === trackId);
+                const isAlt = idx % 2 === 1;
+
                 return (
                   <div
                     key={trackId}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => handleDropOnTrack(e, trackId)}
-                    className="h-10 border-b border-editor-border/60 relative bg-editor-bg/40 hover:bg-editor-subpanel/20 transition-colors"
+                    className={`h-10 border-b border-editor-border/50 relative transition-colors ${
+                      isAlt ? 'bg-[#15161D]' : 'bg-[#181922]'
+                    } hover:bg-editor-subpanel/30`}
                   >
                     {track?.clips.map((clip) => {
                       const isSelected = selectedClipId === clip.id;
@@ -448,14 +469,14 @@ export const Timeline: React.FC = () => {
                             });
                           }}
                           style={{ left, width }}
-                          className={`absolute top-1 bottom-1 rounded px-2 flex items-center justify-between text-[11px] font-medium cursor-grab active:cursor-grabbing shadow select-none transition-shadow ${
+                          className={`absolute top-1 bottom-1 rounded-editor-sm px-2 flex items-center justify-between text-[11px] font-medium cursor-grab active:cursor-grabbing select-none transition-all shadow-sm ${
                             clip.type === 'lipSync'
                               ? isSelected
-                                ? 'bg-purple-600 text-white ring-2 ring-purple-300'
-                                : 'bg-purple-800/80 hover:bg-purple-700/80 text-purple-100 border border-purple-500/50'
+                                ? 'bg-violet-700 text-white ring-2 ring-violet-400 shadow-glow-accent'
+                                : 'bg-violet-950/80 hover:bg-violet-900/80 text-violet-100 border border-violet-500/50'
                               : isSelected
-                              ? 'bg-blue-600 text-white ring-2 ring-blue-300'
-                              : 'bg-blue-800/80 hover:bg-blue-700/80 text-blue-100 border border-blue-500/50'
+                              ? 'bg-editor-active text-white ring-2 ring-editor-accent shadow-glow-accent'
+                              : 'bg-[#222430] hover:bg-[#2A2C3C] text-editor-text border border-editor-border'
                           }`}
                         >
                           {/* Left Trim Handle */}
@@ -473,20 +494,20 @@ export const Timeline: React.FC = () => {
                                 initialDuration: clip.duration,
                               });
                             }}
-                            className="absolute left-0 top-0 bottom-0 w-2.5 hover:bg-white/40 cursor-w-resize rounded-l"
+                            className="absolute left-0 top-0 bottom-0 w-2 hover:bg-white/30 cursor-w-resize rounded-l-editor-sm"
                           />
 
                           {/* Label & Type Icon */}
                           <div className="flex items-center space-x-1.5 truncate pointer-events-none">
                             {clip.type === 'lipSync' ? (
-                              <Smile className="w-3.5 h-3.5 text-purple-300 flex-shrink-0" />
+                              <Smile className="w-3.5 h-3.5 text-violet-300 shrink-0" />
                             ) : (
-                              <ImageIcon className="w-3.5 h-3.5 text-blue-300 flex-shrink-0" />
+                              <ImageIcon className="w-3.5 h-3.5 text-editor-accent shrink-0" />
                             )}
-                            <span className="truncate">{asset?.name || 'Clip'}</span>
+                            <span className="truncate text-xs">{asset?.name || 'Clip'}</span>
                           </div>
 
-                          <span className="text-[10px] opacity-75 font-mono ml-1 flex-shrink-0">
+                          <span className="text-[10px] opacity-75 font-mono ml-1 shrink-0">
                             {clip.duration.toFixed(1)}s
                           </span>
 
@@ -505,7 +526,7 @@ export const Timeline: React.FC = () => {
                                 initialDuration: clip.duration,
                               });
                             }}
-                            className="absolute right-0 top-0 bottom-0 w-2.5 hover:bg-white/40 cursor-e-resize rounded-r"
+                            className="absolute right-0 top-0 bottom-0 w-2 hover:bg-white/30 cursor-e-resize rounded-r-editor-sm"
                           />
                         </div>
                       );
@@ -519,7 +540,7 @@ export const Timeline: React.FC = () => {
             <div
               onDragOver={(e) => e.preventDefault()}
               onDrop={handleDropOnAudioTrack}
-              className="h-10 border-b border-editor-border/60 relative bg-amber-950/20"
+              className="h-10 border-b border-editor-border/50 relative bg-amber-950/15"
             >
               {project.audioClips.map((aClip) => {
                 const left = aClip.start * timelineZoom;
@@ -544,10 +565,10 @@ export const Timeline: React.FC = () => {
                       });
                     }}
                     style={{ left, width }}
-                    className={`absolute top-1 bottom-1 rounded px-2 flex items-center justify-between text-[11px] font-medium cursor-grab active:cursor-grabbing shadow select-none transition-shadow ${
+                    className={`absolute top-1 bottom-1 rounded-editor-sm px-2 flex items-center justify-between text-[11px] font-medium cursor-grab active:cursor-grabbing select-none transition-all shadow-sm ${
                       isSelected
-                        ? 'bg-amber-600 text-white ring-2 ring-amber-300'
-                        : 'bg-amber-800/80 hover:bg-amber-700/80 text-amber-100 border border-amber-600/50'
+                        ? 'bg-amber-600 text-white ring-2 ring-amber-300 shadow-sm'
+                        : 'bg-amber-950/80 hover:bg-amber-900/80 text-amber-100 border border-amber-600/50'
                     }`}
                   >
                     {/* Left Trim Handle */}
@@ -565,11 +586,11 @@ export const Timeline: React.FC = () => {
                           initialDuration: aClip.duration,
                         });
                       }}
-                      className="absolute left-0 top-0 bottom-0 w-2.5 hover:bg-white/40 cursor-w-resize rounded-l"
+                      className="absolute left-0 top-0 bottom-0 w-2 hover:bg-white/30 cursor-w-resize rounded-l-editor-sm"
                     />
 
                     <div className="flex items-center space-x-1.5 truncate pointer-events-none">
-                      <Volume2 className="w-3.5 h-3.5 text-amber-300 flex-shrink-0" />
+                      <Volume2 className="w-3.5 h-3.5 text-amber-300 shrink-0" />
                       <span className="truncate">{asset?.name || 'Audio Track'}</span>
                     </div>
 
@@ -604,7 +625,7 @@ export const Timeline: React.FC = () => {
                           initialDuration: aClip.duration,
                         });
                       }}
-                      className="absolute right-0 top-0 bottom-0 w-2.5 hover:bg-white/40 cursor-e-resize rounded-r"
+                      className="absolute right-0 top-0 bottom-0 w-2 hover:bg-white/30 cursor-e-resize rounded-r-editor-sm"
                     />
                   </div>
                 );

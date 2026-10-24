@@ -114,7 +114,6 @@ export const ProjectModal: React.FC = () => {
           return;
         }
 
-        // Check for missing assets
         const availableIds = new Set(assets.keys());
         const missing = findMissingAssets(validatedProj, availableIds);
 
@@ -135,47 +134,52 @@ export const ProjectModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 select-none">
-      <div className="w-full max-w-lg bg-editor-panel border border-editor-border rounded-xl shadow-2xl flex flex-col overflow-hidden text-xs text-gray-200">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 select-none animate-in fade-in duration-150">
+      <div className="w-full max-w-lg bg-editor-elevated border border-editor-border rounded-editor-xl shadow-modal flex flex-col overflow-hidden text-xs text-editor-text">
         {/* Header */}
-        <div className="h-12 border-b border-editor-border px-4 flex items-center justify-between bg-editor-subpanel">
-          <div className="flex items-center space-x-2">
-            <FolderOpen className="w-4 h-4 text-blue-400" />
-            <h2 className="text-sm font-semibold text-gray-100">Project Manager</h2>
+        <div className="h-12 border-b border-editor-border px-4 flex items-center justify-between bg-editor-panel shrink-0">
+          <div className="flex items-center space-x-2.5">
+            <div className="w-7 h-7 rounded-editor-sm bg-editor-accent/15 border border-editor-accent/30 flex items-center justify-center text-editor-accent">
+              <FolderOpen className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-editor-text">Project Manager</h2>
+              <p className="text-[10px] text-editor-muted leading-tight">Save, open, and export project workspace metadata</p>
+            </div>
           </div>
           <button
             onClick={() => setProjectModalOpen(false)}
-            className="p-1 rounded hover:bg-editor-panel text-gray-400 hover:text-white"
+            className="w-7 h-7 rounded-editor-sm flex items-center justify-center hover:bg-editor-hover text-editor-muted hover:text-editor-text transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+        <div className="p-4 space-y-3.5 max-h-[70vh] overflow-y-auto">
           {importWarning && (
-            <div className="p-3 rounded bg-amber-950/60 border border-amber-800 text-amber-200 flex items-start space-x-2">
-              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <div className="p-2.5 rounded-editor-md bg-amber-500/10 border border-amber-500/30 text-amber-200 flex items-start space-x-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
               <span>{importWarning}</span>
             </div>
           )}
 
           {/* Current Project Name & Save */}
-          <div className="bg-editor-subpanel p-3.5 rounded border border-editor-border space-y-3">
-            <label className="font-semibold text-gray-200 block">Current Project</label>
+          <div className="bg-editor-surface p-3 rounded-editor-md border border-editor-border space-y-2.5">
+            <label className="font-semibold text-editor-secondary block">Current Project</label>
             <div className="flex space-x-2">
               <input
                 type="text"
                 value={projectName}
                 onChange={(e) => setProjectName(e.target.value)}
                 placeholder="Project Name..."
-                className="flex-1 bg-editor-bg border border-editor-border rounded px-3 py-1.5 text-gray-200 focus:outline-none focus:border-blue-500"
+                className="flex-1 bg-editor-panel border border-editor-border rounded-editor-sm px-3 py-1.5 text-editor-text focus:outline-none focus:border-editor-accent text-xs"
               />
               <button
                 onClick={handleSave}
-                className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium flex items-center space-x-1.5 shadow"
+                className="px-3.5 py-1.5 rounded-editor-sm bg-editor-accentAction hover:bg-editor-accent text-white font-medium flex items-center space-x-1.5 shadow-sm transition-colors"
               >
-                {saveSuccess ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+                {saveSuccess ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
                 <span>{saveSuccess ? 'Saved!' : 'Save'}</span>
               </button>
             </div>
@@ -184,10 +188,10 @@ export const ProjectModal: React.FC = () => {
             <div className="flex items-center space-x-2 pt-1">
               <button
                 onClick={handleExportJson}
-                className="px-3 py-1.5 rounded bg-editor-panel hover:bg-editor-border text-gray-300 border border-editor-border flex items-center space-x-1.5"
+                className="px-3 py-1.5 rounded-editor-sm bg-editor-subpanel hover:bg-editor-hover text-editor-secondary hover:text-editor-text border border-editor-border flex items-center space-x-1.5 text-xs transition-colors"
               >
-                <Download className="w-3.5 h-3.5 text-blue-400" />
-                <span>Export JSON Metadata</span>
+                <Download className="w-3.5 h-3.5 text-editor-accent" />
+                <span>Export JSON</span>
               </button>
 
               <input
@@ -199,9 +203,9 @@ export const ProjectModal: React.FC = () => {
               />
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="px-3 py-1.5 rounded bg-editor-panel hover:bg-editor-border text-gray-300 border border-editor-border flex items-center space-x-1.5"
+                className="px-3 py-1.5 rounded-editor-sm bg-editor-subpanel hover:bg-editor-hover text-editor-secondary hover:text-editor-text border border-editor-border flex items-center space-x-1.5 text-xs transition-colors"
               >
-                <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                <Upload className="w-3.5 h-3.5 text-editor-secondary" />
                 <span>Import JSON</span>
               </button>
             </div>
@@ -210,13 +214,13 @@ export const ProjectModal: React.FC = () => {
           {/* Saved Projects in Local IndexedDB */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <span className="font-semibold text-gray-300">Saved Projects in Browser Storage</span>
+              <span className="font-semibold text-editor-secondary">Saved Projects</span>
               <button
                 onClick={() => {
                   newProject();
                   setProjectModalOpen(false);
                 }}
-                className="text-blue-400 hover:underline flex items-center space-x-1 text-[11px]"
+                className="text-editor-accent hover:text-editor-accentHover flex items-center space-x-1 text-[11px] font-medium transition-colors"
               >
                 <Plus className="w-3 h-3" />
                 <span>Create New</span>
@@ -224,34 +228,34 @@ export const ProjectModal: React.FC = () => {
             </div>
 
             {savedProjects.length === 0 ? (
-              <div className="p-4 border border-dashed border-editor-border rounded text-center text-gray-500">
-                No saved projects yet. Click "Save" above to persist this project.
+              <div className="p-4 border border-dashed border-editor-border rounded-editor-md bg-editor-surface/40 text-center text-editor-muted">
+                No saved projects yet. Click "Save" above to persist this project in browser storage.
               </div>
             ) : (
               <div className="space-y-1.5">
                 {savedProjects.map((p) => (
                   <div
                     key={p.id}
-                    className="p-2.5 rounded bg-editor-subpanel border border-editor-border flex items-center justify-between hover:border-gray-500 transition-colors"
+                    className="p-2.5 rounded-editor-sm bg-editor-surface border border-editor-border flex items-center justify-between hover:border-editor-accent/50 transition-colors"
                   >
                     <div>
-                      <p className="font-medium text-gray-200">{p.name}</p>
-                      <p className="text-[10px] text-gray-500 flex items-center space-x-1 mt-0.5">
+                      <p className="font-medium text-editor-text text-xs">{p.name}</p>
+                      <p className="text-[10px] text-editor-muted flex items-center space-x-1 mt-0.5 font-mono">
                         <Clock className="w-3 h-3" />
-                        <span>{new Date(p.updatedAt).toLocaleString()}</span>
+                        <span>{new Date(p.updatedAt).toLocaleDateString()} {new Date(p.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       </p>
                     </div>
 
                     <div className="flex items-center space-x-2">
                       <button
                         onClick={() => handleLoad(p.id)}
-                        className="px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium"
+                        className="px-2.5 py-1 rounded-editor-sm bg-editor-accentAction hover:bg-editor-accent text-white font-medium text-xs transition-colors"
                       >
                         Open
                       </button>
                       <button
                         onClick={() => handleDelete(p.id)}
-                        className="p-1 rounded hover:bg-red-900/40 text-red-400"
+                        className="p-1 rounded-editor-sm hover:bg-editor-danger/20 text-editor-muted hover:text-editor-danger transition-colors"
                         title="Delete saved project"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -265,10 +269,10 @@ export const ProjectModal: React.FC = () => {
         </div>
 
         {/* Footer */}
-        <div className="h-12 border-t border-editor-border px-4 flex items-center justify-end bg-editor-subpanel">
+        <div className="h-12 border-t border-editor-border px-4 flex items-center justify-end bg-editor-panel shrink-0">
           <button
             onClick={() => setProjectModalOpen(false)}
-            className="px-4 py-1.5 rounded hover:bg-editor-panel text-gray-300"
+            className="px-3.5 py-1.5 rounded-editor-sm hover:bg-editor-hover border border-editor-border text-editor-secondary hover:text-editor-text font-medium transition-colors"
           >
             Close
           </button>

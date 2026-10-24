@@ -5,10 +5,8 @@ import { isClipActiveAtTime, getActiveVisualClipsInRenderOrder } from '../../cor
 import {
   ZoomIn,
   ZoomOut,
-  Maximize,
   Maximize2,
   Grid,
-  Eye,
   Crosshair,
 } from 'lucide-react';
 
@@ -116,7 +114,7 @@ export const PreviewCanvas: React.FC = () => {
   const handleFitToViewport = () => {
     const container = containerRef.current;
     if (!container) return;
-    const padding = 40;
+    const padding = 48;
     const availW = container.clientWidth - padding;
     const availH = container.clientHeight - padding;
     const scaleX = availW / project.width;
@@ -127,7 +125,7 @@ export const PreviewCanvas: React.FC = () => {
 
   // Mouse interaction for selecting, moving, resizing, rotating clips on canvas
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return; // Only left click
+    if (e.button !== 0) return;
     const coords = clientToCanvasCoords(e.clientX, e.clientY);
 
     // If a clip is selected and active, check if clicking on handles
@@ -148,7 +146,7 @@ export const PreviewCanvas: React.FC = () => {
 
       // Check character mouth anchor pin if clip is lipSync
       if (selectedClip.type === 'lipSync' && selectedClip.lipSyncData) {
-        const anchor = selectedClip.lipSyncData.mouthAnchor || { x: 0.5, y: 0.65 };
+        const anchor = selectedClip.lipSyncData.mouthAnchor || { x: 0.5, y: 0.5 };
         const pinX = -halfW + selectedClip.width * anchor.x;
         const pinY = -halfH + selectedClip.height * anchor.y;
         if (Math.hypot(localX - pinX, localY - pinY) < 18 / canvasZoom) {
@@ -251,7 +249,7 @@ export const PreviewCanvas: React.FC = () => {
 
         // Check anchor pin hover
         if (selectedClip.type === 'lipSync' && selectedClip.lipSyncData) {
-          const anchor = selectedClip.lipSyncData.mouthAnchor || { x: 0.5, y: 0.65 };
+          const anchor = selectedClip.lipSyncData.mouthAnchor || { x: 0.5, y: 0.5 };
           const pinX = -halfW + selectedClip.width * anchor.x;
           const pinY = -halfH + selectedClip.height * anchor.y;
           if (Math.hypot(localX - pinX, localY - pinY) < 18 / canvasZoom) {
@@ -304,7 +302,6 @@ export const PreviewCanvas: React.FC = () => {
       const localX = dx * Math.cos(rad) - dy * Math.sin(rad);
       const localY = dx * Math.sin(rad) + dy * Math.cos(rad);
 
-      // Convert local coordinate (-width/2 .. width/2) into normalized 0..1 character space
       const normX = Math.max(0, Math.min(1, (localX + initialClipState.width / 2) / initialClipState.width));
       const normY = Math.max(0, Math.min(1, (localY + initialClipState.height / 2) / initialClipState.height));
 
@@ -333,8 +330,7 @@ export const PreviewCanvas: React.FC = () => {
       const centerX = initialClipState.x + initialClipState.width / 2;
       const centerY = initialClipState.y + initialClipState.height / 2;
       const angleRad = Math.atan2(coords.y - centerY, coords.x - centerX);
-      let angleDeg = (angleRad * 180) / Math.PI + 90; // Top is 0 deg
-      // Normalize to 0..360
+      let angleDeg = (angleRad * 180) / Math.PI + 90;
       if (angleDeg < 0) angleDeg += 360;
       updateVisualClip(selectedClip.id, {
         rotation: Math.round(angleDeg),
@@ -385,7 +381,6 @@ export const PreviewCanvas: React.FC = () => {
   // Keyboard shortcut listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if typing in an input or textarea
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
         return;
       }
@@ -426,40 +421,42 @@ export const PreviewCanvas: React.FC = () => {
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
     >
-      {/* Canvas Viewport Controls Bar */}
-      <div className="absolute top-3 left-4 z-10 flex items-center space-x-1.5 bg-editor-panel/90 backdrop-blur border border-editor-border rounded-lg px-2 py-1 shadow-lg text-xs">
+      {/* Floating Canvas Viewport Controls Bar */}
+      <div className="absolute top-3 left-4 z-10 flex items-center space-x-1 bg-editor-panel/90 backdrop-blur-md border border-editor-border rounded-editor-md px-1.5 py-1 shadow-lg text-xs">
         <button
-          onClick={() => setCanvasZoom(canvasZoom - 0.1)}
+          onClick={() => setCanvasZoom(Math.max(0.1, canvasZoom - 0.1))}
           title="Zoom Out"
-          className="p-1 rounded hover:bg-editor-subpanel text-gray-300"
+          className="w-6 h-6 rounded flex items-center justify-center hover:bg-editor-hover text-editor-secondary hover:text-editor-text transition-colors"
         >
           <ZoomOut className="w-3.5 h-3.5" />
         </button>
-        <span className="text-gray-300 font-mono text-[11px] min-w-[42px] text-center">
+        <span className="text-editor-text font-mono text-[11px] min-w-[40px] text-center font-medium">
           {Math.round(canvasZoom * 100)}%
         </span>
         <button
-          onClick={() => setCanvasZoom(canvasZoom + 0.1)}
+          onClick={() => setCanvasZoom(Math.min(3.0, canvasZoom + 0.1))}
           title="Zoom In"
-          className="p-1 rounded hover:bg-editor-subpanel text-gray-300"
+          className="w-6 h-6 rounded flex items-center justify-center hover:bg-editor-hover text-editor-secondary hover:text-editor-text transition-colors"
         >
           <ZoomIn className="w-3.5 h-3.5" />
         </button>
         <button
           onClick={handleFitToViewport}
-          title="Fit to Viewport"
-          className="p-1 rounded hover:bg-editor-subpanel text-gray-300"
+          title="Fit to Viewport (F)"
+          className="w-6 h-6 rounded flex items-center justify-center hover:bg-editor-hover text-editor-secondary hover:text-editor-text transition-colors"
         >
           <Maximize2 className="w-3.5 h-3.5" />
         </button>
 
-        <div className="h-4 w-px bg-editor-border mx-1" />
+        <div className="h-3.5 w-px bg-editor-border mx-1" />
 
         <button
           onClick={toggleCheckerboard}
           title="Toggle Checkerboard Background"
-          className={`p-1 rounded transition-colors ${
-            showCheckerboard ? 'bg-blue-600/30 text-blue-400' : 'hover:bg-editor-subpanel text-gray-400'
+          className={`w-6 h-6 rounded flex items-center justify-center transition-colors ${
+            showCheckerboard
+              ? 'bg-editor-accent/20 text-editor-accent border border-editor-accent/30'
+              : 'hover:bg-editor-hover text-editor-muted hover:text-editor-text'
           }`}
         >
           <Grid className="w-3.5 h-3.5" />
@@ -468,8 +465,10 @@ export const PreviewCanvas: React.FC = () => {
         <button
           onClick={toggleDiagnosticMode}
           title="Toggle Lip-Sync Diagnostic Overlay (Bounds & Anchor)"
-          className={`p-1 rounded transition-colors ${
-            diagnosticMode ? 'bg-purple-600/30 text-purple-400' : 'hover:bg-editor-subpanel text-gray-400'
+          className={`w-6 h-6 rounded flex items-center justify-center transition-colors ${
+            diagnosticMode
+              ? 'bg-editor-accent/20 text-editor-accent border border-editor-accent/30'
+              : 'hover:bg-editor-hover text-editor-muted hover:text-editor-text'
           }`}
         >
           <Crosshair className="w-3.5 h-3.5" />
@@ -477,13 +476,16 @@ export const PreviewCanvas: React.FC = () => {
       </div>
 
       {/* Composition Info Badge */}
-      <div className="absolute top-3 right-4 z-10 bg-editor-panel/80 backdrop-blur border border-editor-border rounded px-2 py-0.5 text-[10px] text-gray-400 font-mono">
-        {project.width} × {project.height} @ {project.fps} FPS
+      <div className="absolute top-3 right-4 z-10 bg-editor-panel/85 backdrop-blur-md border border-editor-border rounded-editor-md px-2.5 py-1 text-[10px] text-editor-secondary font-mono shadow-sm flex items-center space-x-1.5">
+        <span className="w-1.5 h-1.5 rounded-full bg-editor-accent" />
+        <span>{project.width} × {project.height}</span>
+        <span className="text-editor-muted">@</span>
+        <span>{project.fps} FPS</span>
       </div>
 
       {/* Composition Canvas Surface */}
       <div
-        className="relative shadow-2xl transition-transform duration-75 ease-out"
+        className="relative transition-transform duration-75 ease-out"
         style={{
           width: project.width * canvasZoom,
           height: project.height * canvasZoom,
@@ -495,7 +497,7 @@ export const PreviewCanvas: React.FC = () => {
           height={project.height}
           onMouseDown={handleMouseDown}
           style={{ cursor: cursorStyle }}
-          className="w-full h-full block rounded border border-editor-border/80 shadow-2xl"
+          className="w-full h-full block rounded-editor-sm border border-editor-border shadow-panel"
         />
       </div>
     </div>

@@ -224,15 +224,15 @@ export function drawSelectionOverlay(
   const halfW = clip.width / 2;
   const halfH = clip.height / 2;
 
-  // Selection border
-  ctx.strokeStyle = '#3b82f6';
+  // Selection border (Refined violet)
+  ctx.strokeStyle = '#8B5CF6';
   ctx.lineWidth = 2 / zoom;
   ctx.strokeRect(-halfW, -halfH, clip.width, clip.height);
 
   // Resize handles at 4 corners and 4 edges
   const handleSize = 8 / zoom;
-  ctx.fillStyle = '#ffffff';
-  ctx.strokeStyle = '#1d4ed8';
+  ctx.fillStyle = '#FFFFFF';
+  ctx.strokeStyle = '#7C3AED';
   ctx.lineWidth = 1.5 / zoom;
 
   const handlePositions = [
@@ -256,12 +256,12 @@ export function drawSelectionOverlay(
   ctx.beginPath();
   ctx.moveTo(0, -halfH);
   ctx.lineTo(0, -halfH - stemHeight);
-  ctx.strokeStyle = '#3b82f6';
+  ctx.strokeStyle = '#8B5CF6';
   ctx.stroke();
 
   ctx.beginPath();
   ctx.arc(0, -halfH - stemHeight, handleSize / 2, 0, Math.PI * 2);
-  ctx.fillStyle = '#3b82f6';
+  ctx.fillStyle = '#8B5CF6';
   ctx.fill();
   ctx.stroke();
 

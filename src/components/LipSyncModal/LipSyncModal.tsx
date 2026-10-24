@@ -26,13 +26,11 @@ import {
   AlertCircle,
   Sparkles,
   Move,
-  Maximize2,
-  Volume2,
   SlidersHorizontal,
   ChevronDown,
   ChevronUp,
-  Layers,
-  Settings,
+  Sliders,
+  CheckCircle2,
 } from 'lucide-react';
 
 export const LipSyncModal: React.FC = () => {
@@ -218,7 +216,6 @@ export const LipSyncModal: React.FC = () => {
             blob,
             url,
           };
-          // Preload sprite into image cache
           getPreloadedImage(url);
         }
 
@@ -299,10 +296,10 @@ export const LipSyncModal: React.FC = () => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (!selectedCharAsset) {
-      ctx.fillStyle = '#1c1d22';
+      ctx.fillStyle = '#15161B';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#6b7280';
-      ctx.font = '13px sans-serif';
+      ctx.fillStyle = '#6B7280';
+      ctx.font = '500 13px Inter, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('Select a Character image on the left to begin', canvas.width / 2, canvas.height / 2);
       return;
@@ -321,7 +318,7 @@ export const LipSyncModal: React.FC = () => {
     }
 
     // Draw dark studio backdrop
-    ctx.fillStyle = '#18191e';
+    ctx.fillStyle = '#15161B';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Calculate centered character bounds
@@ -392,20 +389,20 @@ export const LipSyncModal: React.FC = () => {
           drawRect.drawHeight
         );
 
-        // Diagnostic Overlay for Mouth Bounds (rotates seamlessly with mouth)
+        // Diagnostic Overlay for Mouth Bounds
         if (showDiagnostic) {
-          // Tight bounding box around mouth shape
-          ctx.strokeStyle = '#3b82f6';
+          // Bounding box around mouth shape
+          ctx.strokeStyle = '#8B5CF6';
           ctx.lineWidth = 1.5;
           ctx.setLineDash([3, 3]);
           ctx.strokeRect(localMouthX, localMouthY, drawRect.drawWidth, drawRect.drawHeight);
           ctx.setLineDash([]);
 
           // Resize handle (bottom right corner)
-          const handleSize = 10;
-          ctx.fillStyle = '#ffffff';
-          ctx.strokeStyle = '#3b82f6';
-          ctx.lineWidth = 2;
+          const handleSize = 9;
+          ctx.fillStyle = '#FFFFFF';
+          ctx.strokeStyle = '#7C3AED';
+          ctx.lineWidth = 1.5;
           ctx.fillRect(
             localMouthX + drawRect.drawWidth - handleSize / 2,
             localMouthY + drawRect.drawHeight - handleSize / 2,
@@ -420,10 +417,10 @@ export const LipSyncModal: React.FC = () => {
           );
 
           // Shape info pill badge
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-          ctx.fillRect(localMouthX, localMouthY - 18, 90, 16);
-          ctx.fillStyle = '#93c5fd';
-          ctx.font = 'bold 10px monospace';
+          ctx.fillStyle = 'rgba(25, 26, 32, 0.9)';
+          ctx.fillRect(localMouthX, localMouthY - 18, 80, 16);
+          ctx.fillStyle = '#C4B5FD';
+          ctx.font = '600 10px monospace';
           ctx.textAlign = 'left';
           ctx.fillText(`Shape [${activeShape}]`, localMouthX + 4, localMouthY - 6);
         }
@@ -431,7 +428,7 @@ export const LipSyncModal: React.FC = () => {
       }
     }
 
-    // Always render the prominent Version 1 Anchor Crosshair when Diagnostic is ON
+    // Anchor Crosshair when Diagnostic is ON
     if (showDiagnostic) {
       const pinX = charX + targetW * charMouthAnchor.x;
       const pinY = charY + targetH * charMouthAnchor.y;
@@ -440,8 +437,8 @@ export const LipSyncModal: React.FC = () => {
       ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
       ctx.shadowBlur = 2;
 
-      // 1. Compact Green Character Anchor Crosshair (arms length 8px)
-      ctx.strokeStyle = '#10b981';
+      // Compact Character Anchor Crosshair
+      ctx.strokeStyle = '#10B981';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.moveTo(pinX - 8, pinY);
@@ -450,14 +447,14 @@ export const LipSyncModal: React.FC = () => {
       ctx.lineTo(pinX, pinY + 8);
       ctx.stroke();
 
-      // 2. Center Anchor Grab Dot (radius 2.5px)
-      ctx.fillStyle = '#10b981';
+      // Center Anchor Dot
+      ctx.fillStyle = '#10B981';
       ctx.beginPath();
       ctx.arc(pinX, pinY, 2.5, 0, Math.PI * 2);
       ctx.fill();
 
-      // 3. Subtle Rose dashed circle (radius 6px)
-      ctx.strokeStyle = '#f43f5e';
+      // Subtle ring
+      ctx.strokeStyle = '#F43F5E';
       ctx.lineWidth = 1.2;
       ctx.setLineDash([2, 2]);
       ctx.beginPath();
@@ -536,7 +533,6 @@ export const LipSyncModal: React.FC = () => {
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
     } catch (_) {}
 
-    // Check if clicking resize handle at bottom-right of mouth
     const charW = coords.targetW;
     const mouthW = charW * mouthScale;
     const mouthH = mouthW * 0.5;
@@ -552,7 +548,6 @@ export const LipSyncModal: React.FC = () => {
       return;
     }
 
-    // Move mouth anchor directly to clicked / dragged position
     setDragMode('move');
     setCharMouthAnchor({ x: coords.normX, y: coords.normY });
   };
@@ -599,7 +594,7 @@ export const LipSyncModal: React.FC = () => {
     setCanvasCursor('crosshair');
   };
 
-  // Scroll wheel on canvas to scale mouth up/down smoothly with non-passive listener
+  // Scroll wheel on canvas to scale mouth up/down smoothly
   useEffect(() => {
     const canvas = previewCanvasRef.current;
     if (!canvas || !isLipSyncModalOpen) return;
@@ -632,7 +627,7 @@ export const LipSyncModal: React.FC = () => {
       height = img.naturalHeight;
       URL.revokeObjectURL(objectUrl);
     } catch {
-      // Fallback if image decode fails
+      // Fallback
     }
 
     const asset = await addAsset({
@@ -742,7 +737,6 @@ export const LipSyncModal: React.FC = () => {
     }
   };
 
-  // Scrubber click on modal timeline bar
   const handleScrubberClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
@@ -753,11 +747,9 @@ export const LipSyncModal: React.FC = () => {
     }
   };
 
-  // Add Confirmed Lip-Sync Result to Timeline
   const handleAddToTimeline = () => {
     if (!selectedCharAsset || !extractedMouthSet || !selectedAudioAsset) return;
 
-    // Fit character cleanly to screen by default while maintaining aspect ratio
     const cachedCharImg = imageCacheRef.current.get(selectedCharAsset.url);
     const naturalWidth = selectedCharAsset.width || cachedCharImg?.naturalWidth || project.width;
     const naturalHeight = selectedCharAsset.height || cachedCharImg?.naturalHeight || project.height;
@@ -818,24 +810,24 @@ export const LipSyncModal: React.FC = () => {
   if (!isLipSyncModalOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 select-none">
-      <div className="w-full max-w-5xl h-[90vh] bg-editor-panel border border-editor-border rounded-xl shadow-2xl flex flex-col overflow-hidden text-xs text-gray-200">
+    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 select-none animate-in fade-in duration-150">
+      <div className="w-full max-w-5xl h-[88vh] bg-editor-elevated border border-editor-border rounded-editor-xl shadow-modal flex flex-col overflow-hidden text-xs text-editor-text">
         {/* Header */}
-        <div className="h-12 border-b border-editor-border px-5 flex items-center justify-between bg-editor-subpanel flex-shrink-0">
-          <div className="flex items-center space-x-2">
-            <div className="w-7 h-7 rounded bg-purple-600/30 border border-purple-500/50 flex items-center justify-center text-purple-400">
+        <div className="h-12 border-b border-editor-border px-4 flex items-center justify-between bg-editor-panel shrink-0">
+          <div className="flex items-center space-x-2.5">
+            <div className="w-7 h-7 rounded-editor-sm bg-editor-accent/15 border border-editor-accent/30 flex items-center justify-center text-editor-accent">
               <Smile className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-gray-100">Lip-Sync Animation Generator</h2>
-              <p className="text-[10px] text-gray-400 leading-none">
-                Drag mouth with cursor on the canvas • Auto-crops 9 Rhubarb visemes
+              <h2 className="text-sm font-semibold text-editor-text">Lip-Sync Animation Generator</h2>
+              <p className="text-[10px] text-editor-muted leading-tight">
+                Position mouth with cursor on canvas • Auto-crops 9 Rhubarb viseme shapes
               </p>
             </div>
           </div>
           <button
             onClick={() => setLipSyncModalOpen(false)}
-            className="p-1.5 rounded hover:bg-editor-panel text-gray-400 hover:text-white"
+            className="w-7 h-7 rounded-editor-sm flex items-center justify-center hover:bg-editor-hover text-editor-muted hover:text-editor-text transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -844,40 +836,40 @@ export const LipSyncModal: React.FC = () => {
         {/* Modal Body: Left Inputs & Right Canvas */}
         <div className="flex-1 flex overflow-hidden min-h-0">
           {/* Left Column: Form & Inputs */}
-          <div className="w-[370px] border-r border-editor-border p-4 overflow-y-auto space-y-3.5 flex-shrink-0">
+          <div className="w-[360px] bg-editor-panel border-r border-editor-border p-3.5 overflow-y-auto space-y-3.5 shrink-0">
             {errorMessage && (
-              <div className="p-2.5 rounded bg-red-950/60 border border-red-800 text-red-200 flex items-start space-x-2">
-                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <div className="p-2.5 rounded-editor-md bg-editor-danger/10 border border-editor-danger/30 text-editor-danger flex items-start space-x-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>{errorMessage}</span>
               </div>
             )}
 
-            {/* Library Scope Selector */}
-            <div className="flex items-center justify-between pb-1 border-b border-editor-border/40 text-[11px]">
-              <span className="text-gray-400">Media Source:</span>
+            {/* Scope Filter */}
+            <div className="flex items-center justify-between pb-1 border-b border-editor-border/60 text-[11px]">
+              <span className="text-editor-muted font-medium">Source Filter</span>
               <button
                 type="button"
                 onClick={() => setShowAllLibraryAssets(!showAllLibraryAssets)}
-                className="text-xs text-purple-400 hover:text-purple-300 underline font-medium"
+                className="text-xs text-editor-accent hover:text-editor-accentHover underline font-medium transition-colors"
               >
-                {showAllLibraryAssets ? 'Showing All Saved Media' : 'Current Project Media'}
+                {showAllLibraryAssets ? 'All Saved Media' : 'Current Project'}
               </button>
             </div>
 
-            {/* Input 1: Character Asset */}
-            <div>
-              <label className="font-semibold text-gray-300 block mb-1">
-                1. Character Asset
+            {/* Step 1: Character Asset */}
+            <div className="space-y-1">
+              <label className="font-semibold text-editor-text block">
+                1. Character Image
               </label>
-              <div className="flex space-x-2">
+              <div className="flex space-x-1.5">
                 <select
                   value={selectedCharId}
                   onChange={(e) => setSelectedCharId(e.target.value)}
-                  className="flex-1 bg-editor-bg border border-editor-border rounded px-2.5 py-1.5 text-gray-200 focus:outline-none focus:border-purple-500"
+                  className="flex-1 bg-editor-surface border border-editor-border rounded-editor-sm px-2.5 py-1.5 text-editor-text focus:outline-none focus:border-editor-accent cursor-pointer"
                 >
                   <option value="">Select Character Image...</option>
                   {imageAssets.map((a) => (
-                    <option key={a.id} value={a.id}>{a.name}</option>
+                    <option key={a.id} value={a.id} className="bg-editor-elevated">{a.name}</option>
                   ))}
                 </select>
                 <input
@@ -889,33 +881,33 @@ export const LipSyncModal: React.FC = () => {
                 />
                 <button
                   onClick={() => charInputRef.current?.click()}
-                  title="Upload New Character"
-                  className="px-2.5 py-1.5 rounded bg-editor-subpanel hover:bg-editor-hover border border-editor-border text-gray-300"
+                  title="Upload New Character Image"
+                  className="px-2.5 py-1.5 rounded-editor-sm bg-editor-subpanel hover:bg-editor-hover border border-editor-border text-editor-secondary hover:text-editor-text transition-colors"
                 >
-                  <Upload className="w-4 h-4" />
+                  <Upload className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
 
-            {/* Input 2: Mouth Sprite Sheet */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="font-semibold text-gray-300">
+            {/* Step 2: Mouth Sprite Sheet */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <label className="font-semibold text-editor-text">
                   2. Mouth Sprite Sheet
                 </label>
                 {isExtractingSheet && (
-                  <span className="text-[10px] text-purple-400 animate-pulse">Extracting shapes...</span>
+                  <span className="text-[10px] text-editor-accent animate-pulse font-medium">Extracting...</span>
                 )}
               </div>
-              <div className="flex space-x-2">
+              <div className="flex space-x-1.5">
                 <select
                   value={selectedSheetId}
                   onChange={(e) => setSelectedSheetId(e.target.value)}
-                  className="flex-1 bg-editor-bg border border-editor-border rounded px-2.5 py-1.5 text-gray-200 focus:outline-none focus:border-purple-500"
+                  className="flex-1 bg-editor-surface border border-editor-border rounded-editor-sm px-2.5 py-1.5 text-editor-text focus:outline-none focus:border-editor-accent cursor-pointer"
                 >
                   <option value="">Select Mouth Sprite Sheet...</option>
                   {imageAssets.map((a) => (
-                    <option key={a.id} value={a.id}>{a.name}</option>
+                    <option key={a.id} value={a.id} className="bg-editor-elevated">{a.name}</option>
                   ))}
                 </select>
                 <input
@@ -928,18 +920,18 @@ export const LipSyncModal: React.FC = () => {
                 <button
                   onClick={() => sheetInputRef.current?.click()}
                   title="Upload New Sprite Sheet"
-                  className="px-2.5 py-1.5 rounded bg-editor-subpanel hover:bg-editor-hover border border-editor-border text-gray-300"
+                  className="px-2.5 py-1.5 rounded-editor-sm bg-editor-subpanel hover:bg-editor-hover border border-editor-border text-editor-secondary hover:text-editor-text transition-colors"
                 >
-                  <Upload className="w-4 h-4" />
+                  <Upload className="w-3.5 h-3.5" />
                 </button>
               </div>
 
               {/* Grid Layout & Crop Mode Options */}
               {selectedSheetAsset && (
-                <div className="mt-2 p-2 bg-editor-bg/60 border border-editor-border/60 rounded-md space-y-1.5 text-[11px]">
+                <div className="mt-2 p-2 bg-editor-surface border border-editor-border rounded-editor-sm space-y-1.5 text-[11px]">
                   <div className="flex items-center justify-between">
-                    <span className="text-gray-400">Sheet Grid:</span>
-                    <div className="flex bg-editor-subpanel rounded p-0.5 border border-editor-border">
+                    <span className="text-editor-muted">Sheet Layout:</span>
+                    <div className="flex bg-editor-subpanel rounded-editor-sm p-0.5 border border-editor-border">
                       {(['auto', '3x3', '4x3'] as const).map((t) => (
                         <button
                           key={t}
@@ -947,28 +939,28 @@ export const LipSyncModal: React.FC = () => {
                           onClick={() => setGridTemplate(t)}
                           className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
                             gridTemplate === t
-                              ? 'bg-purple-600 text-white'
-                              : 'text-gray-400 hover:text-white'
+                              ? 'bg-editor-accentAction text-white'
+                              : 'text-editor-muted hover:text-editor-text'
                           }`}
                         >
-                          {t === 'auto' ? 'Auto' : t === '3x3' ? '3×3 (9)' : '4×3 Anime'}
+                          {t === 'auto' ? 'Auto' : t === '3x3' ? '3×3' : '4×3'}
                         </button>
                       ))}
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <span className="text-gray-400">Crop Sizing:</span>
-                    <div className="flex bg-editor-subpanel rounded p-0.5 border border-editor-border">
+                    <span className="text-editor-muted">Crop Sizing:</span>
+                    <div className="flex bg-editor-subpanel rounded-editor-sm p-0.5 border border-editor-border">
                       <button
                         type="button"
                         onClick={() => setCropMode('crop')}
                         className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
                           cropMode === 'crop'
-                            ? 'bg-purple-600 text-white'
-                            : 'text-gray-400 hover:text-white'
+                            ? 'bg-editor-accentAction text-white'
+                            : 'text-editor-muted hover:text-editor-text'
                         }`}
-                        title="Proportional scaling preserves artist's scale (small mouths stay small, open mouths stay wide)"
+                        title="Proportional scaling preserves natural size differences between shapes"
                       >
                         Proportional
                       </button>
@@ -977,10 +969,10 @@ export const LipSyncModal: React.FC = () => {
                         onClick={() => setCropMode('cell')}
                         className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
                           cropMode === 'cell'
-                            ? 'bg-purple-600 text-white'
-                            : 'text-gray-400 hover:text-white'
+                            ? 'bg-editor-accentAction text-white'
+                            : 'text-editor-muted hover:text-editor-text'
                         }`}
-                        title="Keep full 1:1 cell frames without auto-trimming"
+                        title="Uniform full cell boundaries"
                       >
                         Full Cells
                       </button>
@@ -990,20 +982,20 @@ export const LipSyncModal: React.FC = () => {
               )}
             </div>
 
-            {/* Input 3: Audio File */}
-            <div>
-              <label className="font-semibold text-gray-300 block mb-1">
+            {/* Step 3: Spoken Audio */}
+            <div className="space-y-1">
+              <label className="font-semibold text-editor-text block">
                 3. Spoken Audio File
               </label>
-              <div className="flex space-x-2">
+              <div className="flex space-x-1.5">
                 <select
                   value={selectedAudioId}
                   onChange={(e) => setSelectedAudioId(e.target.value)}
-                  className="flex-1 bg-editor-bg border border-editor-border rounded px-2.5 py-1.5 text-gray-200 focus:outline-none focus:border-purple-500"
+                  className="flex-1 bg-editor-surface border border-editor-border rounded-editor-sm px-2.5 py-1.5 text-editor-text focus:outline-none focus:border-editor-accent cursor-pointer"
                 >
                   <option value="">Select Spoken Audio...</option>
                   {audioAssets.map((a) => (
-                    <option key={a.id} value={a.id}>
+                    <option key={a.id} value={a.id} className="bg-editor-elevated">
                       {a.name} ({a.duration?.toFixed(1)}s)
                     </option>
                   ))}
@@ -1018,48 +1010,48 @@ export const LipSyncModal: React.FC = () => {
                 <button
                   onClick={() => audioInputRef.current?.click()}
                   title="Upload New Audio"
-                  className="px-2.5 py-1.5 rounded bg-editor-subpanel hover:bg-editor-hover border border-editor-border text-gray-300"
+                  className="px-2.5 py-1.5 rounded-editor-sm bg-editor-subpanel hover:bg-editor-hover border border-editor-border text-editor-secondary hover:text-editor-text transition-colors"
                 >
-                  <Upload className="w-4 h-4" />
+                  <Upload className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
 
-            {/* Input 4: Dialogue Text */}
-            <div>
-              <label className="font-semibold text-gray-300 block mb-1">
+            {/* Step 4: Dialogue Text */}
+            <div className="space-y-1">
+              <label className="font-semibold text-editor-text block">
                 4. Spoken Dialogue Text
               </label>
               <textarea
                 rows={2}
                 value={dialogueText}
                 onChange={(e) => setDialogueText(e.target.value)}
-                placeholder="Paste or type the dialogue..."
-                className="w-full bg-editor-bg border border-editor-border rounded px-2.5 py-1.5 text-gray-200 focus:outline-none focus:border-purple-500 resize-none font-mono text-[11px]"
+                placeholder="Type spoken dialogue for speech sync..."
+                className="w-full bg-editor-surface border border-editor-border rounded-editor-sm px-2.5 py-1.5 text-editor-text focus:outline-none focus:border-editor-accent resize-none font-mono text-[11px]"
               />
             </div>
 
-            {/* Action Row: Generate + Tuning Popover Toggle */}
-            <div className="space-y-2">
+            {/* Action Row: Generate & Tuning */}
+            <div className="space-y-2 pt-1">
               <div className="flex space-x-2">
                 <button
                   onClick={handleGenerate}
                   disabled={isProcessing || !selectedCharId || !selectedSheetId || !selectedAudioId}
-                  className="flex-1 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-40 text-white font-medium flex items-center justify-center space-x-2 shadow-lg transition-colors"
+                  className="flex-1 py-2 rounded-editor-md bg-editor-accentAction hover:bg-editor-accent disabled:opacity-35 text-white font-semibold flex items-center justify-center space-x-2 shadow-sm transition-all"
                 >
-                  <Sparkles className="w-4 h-4" />
-                  <span>{isProcessing ? 'Generating Speech Sync...' : 'Generate Lip Sync'}</span>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>{isProcessing ? 'Synchronizing Speech...' : 'Generate Lip Sync'}</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setShowTuningPopover(!showTuningPopover)}
-                  className={`px-3 py-2 rounded-lg border font-medium flex items-center space-x-1.5 transition-colors ${
+                  className={`px-3 py-2 rounded-editor-md border font-medium flex items-center space-x-1.5 transition-colors ${
                     showTuningPopover
-                      ? 'bg-purple-600 text-white border-purple-500'
-                      : 'bg-editor-subpanel text-gray-300 border-editor-border hover:bg-editor-hover'
+                      ? 'bg-editor-accent text-white border-editor-accent'
+                      : 'bg-editor-subpanel text-editor-secondary border-editor-border hover:bg-editor-hover'
                   }`}
-                  title="Tune speech speed, smoothness, and min cue duration"
+                  title="Speech speed, smoothness, and min duration tuning"
                 >
                   <SlidersHorizontal className="w-3.5 h-3.5" />
                   <span>Tuning</span>
@@ -1067,30 +1059,30 @@ export const LipSyncModal: React.FC = () => {
                 </button>
               </div>
 
-              {/* Lip-Sync Tuning Panel */}
+              {/* Lip-Sync Tuning Drawer */}
               {showTuningPopover && (
-                <div className="p-3 bg-editor-bg border border-purple-500/40 rounded-lg space-y-2.5 animate-in fade-in duration-150">
-                  <div className="flex items-center justify-between text-xs font-semibold text-purple-300 border-b border-editor-border pb-1">
+                <div className="p-3 bg-editor-surface border border-editor-accent/40 rounded-editor-md space-y-2.5 animate-in fade-in duration-100">
+                  <div className="flex items-center justify-between text-xs font-semibold text-editor-accent border-b border-editor-border pb-1">
                     <span className="flex items-center space-x-1">
-                      <SlidersHorizontal className="w-3.5 h-3.5" />
-                      <span>Lip-Sync Audio Tuning</span>
+                      <Sliders className="w-3.5 h-3.5" />
+                      <span>Audio Sync Tuning</span>
                     </span>
                     <button
                       type="button"
                       onClick={() => setTuning(DEFAULT_LIPSYNC_TUNING)}
-                      className="text-[10px] text-gray-400 hover:text-white underline font-normal"
+                      className="text-[10px] text-editor-muted hover:text-editor-text underline font-normal"
                     >
                       Reset Defaults
                     </button>
                   </div>
 
-                  {/* 1. Timing Speed */}
+                  {/* Speed */}
                   <div>
-                    <div className="flex justify-between text-[11px] text-gray-400 mb-1">
+                    <div className="flex justify-between text-[11px] text-editor-secondary mb-1">
                       <span>Timing Speed</span>
-                      <span className="capitalize text-gray-200 font-medium">{tuning.speed}</span>
+                      <span className="capitalize text-editor-text font-medium">{tuning.speed}</span>
                     </div>
-                    <div className="grid grid-cols-3 gap-1 bg-editor-subpanel p-0.5 rounded border border-editor-border">
+                    <div className="grid grid-cols-3 gap-1 bg-editor-subpanel p-0.5 rounded-editor-sm border border-editor-border">
                       {(['slower', 'natural', 'faster'] as const).map((spd) => (
                         <button
                           key={spd}
@@ -1098,8 +1090,8 @@ export const LipSyncModal: React.FC = () => {
                           onClick={() => setTuning((prev) => ({ ...prev, speed: spd }))}
                           className={`py-1 text-center text-[10px] font-semibold rounded capitalize transition-all ${
                             tuning.speed === spd
-                              ? 'bg-purple-600 text-white'
-                              : 'text-gray-400 hover:text-gray-200'
+                              ? 'bg-editor-accentAction text-white'
+                              : 'text-editor-muted hover:text-editor-text'
                           }`}
                         >
                           {spd}
@@ -1108,15 +1100,15 @@ export const LipSyncModal: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* 2. Transition Smoothness */}
+                  {/* Smoothness */}
                   <div>
-                    <div className="flex justify-between text-[11px] text-gray-400 mb-1">
-                      <span>Smoothness</span>
-                      <span className="text-gray-200 font-medium">
+                    <div className="flex justify-between text-[11px] text-editor-secondary mb-1">
+                      <span>Transition Smoothness</span>
+                      <span className="text-editor-text font-medium">
                         {tuning.smoothness === 'low' ? 'Crisp' : tuning.smoothness === 'high' ? 'Smooth' : 'Natural'}
                       </span>
                     </div>
-                    <div className="grid grid-cols-3 gap-1 bg-editor-subpanel p-0.5 rounded border border-editor-border">
+                    <div className="grid grid-cols-3 gap-1 bg-editor-subpanel p-0.5 rounded-editor-sm border border-editor-border">
                       {[
                         { id: 'low', label: 'Crisp' },
                         { id: 'medium', label: 'Natural' },
@@ -1128,8 +1120,8 @@ export const LipSyncModal: React.FC = () => {
                           onClick={() => setTuning((prev) => ({ ...prev, smoothness: sm.id as any }))}
                           className={`py-1 text-center text-[10px] font-semibold rounded transition-all ${
                             tuning.smoothness === sm.id
-                              ? 'bg-purple-600 text-white'
-                              : 'text-gray-400 hover:text-gray-200'
+                              ? 'bg-editor-accentAction text-white'
+                              : 'text-editor-muted hover:text-editor-text'
                           }`}
                         >
                           {sm.label}
@@ -1138,11 +1130,11 @@ export const LipSyncModal: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* 3. Min Duration */}
+                  {/* Min Cue Duration */}
                   <div>
-                    <div className="flex justify-between items-center text-[11px] text-gray-400 mb-0.5">
+                    <div className="flex justify-between items-center text-[11px] text-editor-secondary mb-0.5">
                       <span>Min Cue Duration</span>
-                      <span className="font-mono text-purple-300 font-semibold bg-purple-950/60 px-1.5 py-0.2 rounded border border-purple-800 text-[10px]">
+                      <span className="font-mono text-editor-accent font-semibold bg-editor-subpanel px-1.5 py-0.5 rounded border border-editor-border text-[10px]">
                         {tuning.minDurationMs}ms
                       </span>
                     </div>
@@ -1153,18 +1145,18 @@ export const LipSyncModal: React.FC = () => {
                       step="5"
                       value={tuning.minDurationMs}
                       onChange={(e) => setTuning((prev) => ({ ...prev, minDurationMs: parseInt(e.target.value) || 90 }))}
-                      className="w-full accent-purple-500"
+                      className="w-full"
                     />
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Interactive Anchor & Scale Fine-Tuning */}
-            <div className="bg-editor-subpanel border border-editor-border rounded-lg p-3 space-y-3">
-              {/* 1. Outside Anchor: Mouth Placement on Character */}
+            {/* Position & Anchor Fine-Tuning */}
+            <div className="bg-editor-surface border border-editor-border rounded-editor-md p-3 space-y-3">
+              {/* Mouth Placement on Character */}
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-purple-400 font-semibold text-xs">
+                <div className="flex items-center justify-between text-editor-accent font-semibold text-xs">
                   <span className="flex items-center space-x-1">
                     <Move className="w-3.5 h-3.5" />
                     <span>Mouth Position on Character</span>
@@ -1172,7 +1164,7 @@ export const LipSyncModal: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setCharMouthAnchor({ x: 0.5, y: 0.5 })}
-                    className="text-[10px] text-gray-400 hover:text-white underline font-normal"
+                    className="text-[10px] text-editor-muted hover:text-editor-text underline font-normal"
                     title="Center on character (50%, 50%)"
                   >
                     Reset (50%, 50%)
@@ -1181,9 +1173,9 @@ export const LipSyncModal: React.FC = () => {
 
                 <div className="space-y-1.5">
                   <div>
-                    <div className="flex justify-between text-[11px] text-gray-400 mb-0.5">
+                    <div className="flex justify-between text-[11px] text-editor-secondary mb-0.5">
                       <span>Position X</span>
-                      <span className="font-mono text-gray-200">{Math.round(charMouthAnchor.x * 100)}%</span>
+                      <span className="font-mono text-editor-text">{Math.round(charMouthAnchor.x * 100)}%</span>
                     </div>
                     <input
                       type="range"
@@ -1192,14 +1184,14 @@ export const LipSyncModal: React.FC = () => {
                       step="0.005"
                       value={charMouthAnchor.x}
                       onChange={(e) => setCharMouthAnchor((prev) => ({ ...prev, x: parseFloat(e.target.value) }))}
-                      className="w-full accent-purple-500"
+                      className="w-full"
                     />
                   </div>
 
                   <div>
-                    <div className="flex justify-between text-[11px] text-gray-400 mb-0.5">
+                    <div className="flex justify-between text-[11px] text-editor-secondary mb-0.5">
                       <span>Position Y</span>
-                      <span className="font-mono text-gray-200">{Math.round(charMouthAnchor.y * 100)}%</span>
+                      <span className="font-mono text-editor-text">{Math.round(charMouthAnchor.y * 100)}%</span>
                     </div>
                     <input
                       type="range"
@@ -1208,24 +1200,23 @@ export const LipSyncModal: React.FC = () => {
                       step="0.005"
                       value={charMouthAnchor.y}
                       onChange={(e) => setCharMouthAnchor((prev) => ({ ...prev, y: parseFloat(e.target.value) }))}
-                      className="w-full accent-purple-500"
+                      className="w-full"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* 2. Inside Anchor: Mouth Sprite Internal Anchor */}
+              {/* Mouth Center Anchor */}
               <div className="pt-2 border-t border-editor-border/60 space-y-1.5">
-                <div className="flex items-center justify-between text-purple-400 font-semibold text-xs">
+                <div className="flex items-center justify-between text-editor-accent font-semibold text-xs">
                   <span className="flex items-center space-x-1">
                     <Crosshair className="w-3.5 h-3.5" />
-                    <span>Mouth Sprite Center Anchor</span>
+                    <span>Mouth Center Anchor</span>
                   </span>
                   <button
                     type="button"
                     onClick={() => setMouthSpriteAnchor({ anchorX: 0.5, anchorY: 0.5 })}
-                    className="px-2 py-0.5 text-[10px] rounded bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/50 text-purple-200"
-                    title="Put mouth anchor at exact center"
+                    className="px-2 py-0.5 text-[10px] rounded-editor-sm bg-editor-accent/15 hover:bg-editor-accent/25 border border-editor-accent/30 text-editor-accent transition-colors"
                   >
                     Put at Center
                   </button>
@@ -1233,9 +1224,9 @@ export const LipSyncModal: React.FC = () => {
 
                 <div className="space-y-1.5">
                   <div>
-                    <div className="flex justify-between text-[11px] text-gray-400 mb-0.5">
-                      <span>Mouth Internal X</span>
-                      <span className="font-mono text-gray-200">{Math.round(mouthSpriteAnchor.anchorX * 100)}%</span>
+                    <div className="flex justify-between text-[11px] text-editor-secondary mb-0.5">
+                      <span>Internal X</span>
+                      <span className="font-mono text-editor-text">{Math.round(mouthSpriteAnchor.anchorX * 100)}%</span>
                     </div>
                     <input
                       type="range"
@@ -1244,14 +1235,14 @@ export const LipSyncModal: React.FC = () => {
                       step="0.01"
                       value={mouthSpriteAnchor.anchorX}
                       onChange={(e) => setMouthSpriteAnchor((prev) => ({ ...prev, anchorX: parseFloat(e.target.value) }))}
-                      className="w-full accent-purple-500"
+                      className="w-full"
                     />
                   </div>
 
                   <div>
-                    <div className="flex justify-between text-[11px] text-gray-400 mb-0.5">
-                      <span>Mouth Internal Y</span>
-                      <span className="font-mono text-gray-200">{Math.round(mouthSpriteAnchor.anchorY * 100)}%</span>
+                    <div className="flex justify-between text-[11px] text-editor-secondary mb-0.5">
+                      <span>Internal Y</span>
+                      <span className="font-mono text-editor-text">{Math.round(mouthSpriteAnchor.anchorY * 100)}%</span>
                     </div>
                     <input
                       type="range"
@@ -1260,17 +1251,17 @@ export const LipSyncModal: React.FC = () => {
                       step="0.01"
                       value={mouthSpriteAnchor.anchorY}
                       onChange={(e) => setMouthSpriteAnchor((prev) => ({ ...prev, anchorY: parseFloat(e.target.value) }))}
-                      className="w-full accent-purple-500"
+                      className="w-full"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* 3. Mouth Scale */}
+              {/* Mouth Scale */}
               <div className="pt-2 border-t border-editor-border/60">
-                <div className="flex justify-between text-[11px] text-gray-400 mb-0.5">
-                  <span>Mouth Scale (or scroll wheel on canvas)</span>
-                  <span className="font-mono text-gray-200">{Math.round(mouthScale * 100)}%</span>
+                <div className="flex justify-between text-[11px] text-editor-secondary mb-0.5">
+                  <span>Mouth Scale (or wheel on canvas)</span>
+                  <span className="font-mono text-editor-text font-medium">{Math.round(mouthScale * 100)}%</span>
                 </div>
                 <input
                   type="range"
@@ -1279,26 +1270,26 @@ export const LipSyncModal: React.FC = () => {
                   step="0.01"
                   value={mouthScale}
                   onChange={(e) => setMouthScale(parseFloat(e.target.value))}
-                  className="w-full accent-purple-500"
+                  className="w-full"
                 />
               </div>
 
-              {/* 4. Mouth Rotation */}
+              {/* Mouth Rotation */}
               <div className="pt-2 border-t border-editor-border/60">
-                <div className="flex justify-between items-center text-[11px] text-gray-400 mb-0.5">
+                <div className="flex justify-between items-center text-[11px] text-editor-secondary mb-0.5">
                   <span className="flex items-center space-x-1">
-                    <RotateCw className="w-3 h-3 text-purple-400" />
+                    <RotateCw className="w-3 h-3 text-editor-accent" />
                     <span>Mouth Rotation</span>
                   </span>
                   <div className="flex items-center space-x-1.5">
-                    <span className="font-mono text-gray-200">
+                    <span className="font-mono text-editor-text">
                       {mouthRotation > 0 ? `+${mouthRotation}°` : `${mouthRotation}°`}
                     </span>
                     {mouthRotation !== 0 && (
                       <button
                         type="button"
                         onClick={() => setMouthRotation(0)}
-                        className="text-[10px] text-gray-400 hover:text-white underline ml-1"
+                        className="text-[10px] text-editor-muted hover:text-editor-text underline ml-1"
                         title="Reset rotation to 0°"
                       >
                         Reset
@@ -1313,7 +1304,7 @@ export const LipSyncModal: React.FC = () => {
                   step="1"
                   value={mouthRotation}
                   onChange={(e) => setMouthRotation(parseInt(e.target.value) || 0)}
-                  className="w-full accent-purple-500"
+                  className="w-full"
                 />
               </div>
             </div>
@@ -1322,22 +1313,22 @@ export const LipSyncModal: React.FC = () => {
           {/* Right Column: Interactive Canvas & Audio Scrubber */}
           <div className="flex-1 bg-editor-bg flex flex-col p-4 overflow-hidden min-h-0 justify-between">
             {/* Top Toolbar */}
-            <div className="flex items-center justify-between pb-2.5 border-b border-editor-border flex-shrink-0">
+            <div className="flex items-center justify-between pb-2.5 border-b border-editor-border shrink-0">
               <div className="flex items-center space-x-2">
                 <button
                   onClick={() => setShowDiagnostic(!showDiagnostic)}
-                  className={`px-2.5 py-1 rounded text-xs flex items-center space-x-1.5 transition-colors ${
+                  className={`px-2.5 py-1 rounded-editor-sm text-xs flex items-center space-x-1.5 transition-colors ${
                     showDiagnostic
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-editor-subpanel text-gray-400 hover:text-white'
+                      ? 'bg-editor-accentAction text-white font-medium'
+                      : 'bg-editor-subpanel text-editor-muted hover:text-editor-text border border-editor-border'
                   }`}
                 >
                   <Crosshair className="w-3.5 h-3.5" />
                   <span>Diagnostic Overlay</span>
                 </button>
 
-                <span className="text-[10px] text-gray-500 hidden sm:inline">
-                  Tip: Click & drag mouth on canvas to position
+                <span className="text-[11px] text-editor-muted hidden sm:inline">
+                  Drag mouth on canvas to position • Scroll wheel to scale
                 </span>
               </div>
 
@@ -1358,7 +1349,7 @@ export const LipSyncModal: React.FC = () => {
                         setModalTime(0);
                       }
                     }}
-                    className="p-1.5 rounded hover:bg-editor-subpanel text-gray-400"
+                    className="w-7 h-7 rounded-editor-sm flex items-center justify-center hover:bg-editor-hover text-editor-secondary hover:text-editor-text transition-colors"
                     title="Rewind"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
@@ -1372,12 +1363,12 @@ export const LipSyncModal: React.FC = () => {
                         modalAudioRef.current.play();
                       }
                     }}
-                    className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white flex items-center space-x-1.5 shadow"
+                    className="h-7 px-3 rounded-editor-sm bg-editor-accentAction hover:bg-editor-accent text-white flex items-center space-x-1.5 shadow-sm font-medium transition-colors"
                   >
-                    {modalPlaying ? <Pause className="w-3.5 h-3.5 fill-white" /> : <Play className="w-3.5 h-3.5 fill-white" />}
+                    {modalPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current ml-0.5" />}
                     <span>{modalPlaying ? 'Pause' : 'Play Audio Sync'}</span>
                   </button>
-                  <span className="font-mono text-[11px] text-gray-300">
+                  <span className="font-mono text-[11px] text-editor-secondary">
                     {modalTime.toFixed(1)}s / {lipSyncDuration.toFixed(1)}s
                   </span>
                 </div>
@@ -1394,16 +1385,16 @@ export const LipSyncModal: React.FC = () => {
                 onPointerMove={handleCanvasPointerMove}
                 onPointerUp={handleCanvasPointerUp}
                 style={{ cursor: canvasCursor }}
-                className="max-w-full max-h-full border border-editor-border rounded-lg bg-[#18191e] shadow-2xl select-none"
+                className="max-w-full max-h-full border border-editor-border rounded-editor-md bg-editor-surface shadow-modal select-none"
               />
             </div>
 
             {/* Audio & Cue Scrubber Bar */}
             {generatedCues.length > 0 && (
-              <div className="py-2 flex-shrink-0">
+              <div className="py-2 shrink-0">
                 <div
                   onClick={handleScrubberClick}
-                  className="h-6 bg-editor-subpanel rounded border border-editor-border relative cursor-pointer overflow-hidden flex items-center"
+                  className="h-6 bg-editor-subpanel rounded-editor-sm border border-editor-border relative cursor-pointer overflow-hidden flex items-center shadow-inner"
                 >
                   {/* Cues visualization blocks */}
                   {generatedCues.map((cue, idx) => {
@@ -1413,14 +1404,14 @@ export const LipSyncModal: React.FC = () => {
                       <div
                         key={idx}
                         style={{ left: `${left}%`, width: `${width}%` }}
-                        className="absolute top-0 bottom-0 border-r border-black/40 bg-purple-600/30 text-[9px] font-bold text-purple-200 flex items-center justify-center truncate px-0.5"
+                        className="absolute top-0 bottom-0 border-r border-black/40 bg-editor-accent/25 text-[9px] font-bold text-violet-200 flex items-center justify-center truncate px-0.5"
                         title={`${cue.mouthId} (${cue.start.toFixed(2)}s - ${cue.end.toFixed(2)}s)`}
                       >
                         {cue.mouthId}
                       </div>
                     );
                   })}
-                  {/* Red scrubber playhead */}
+                  {/* Scrubber playhead line */}
                   <div
                     style={{ left: `${(modalTime / lipSyncDuration) * 100}%` }}
                     className="absolute top-0 bottom-0 w-1 bg-red-500 shadow-md pointer-events-none"
@@ -1431,9 +1422,9 @@ export const LipSyncModal: React.FC = () => {
 
             {/* Visemes Strip to click, audition, and fine-tune individual shapes */}
             {extractedMouthSet && (
-              <div className="border-t border-editor-border pt-2 flex flex-col space-y-2 flex-shrink-0">
-                <div className="flex items-center space-x-2 overflow-x-auto">
-                  <span className="text-[10px] text-gray-400 flex-shrink-0">Audition Shape:</span>
+              <div className="border-t border-editor-border pt-2 flex flex-col space-y-2 shrink-0">
+                <div className="flex items-center space-x-1.5 overflow-x-auto py-0.5">
+                  <span className="text-[10px] text-editor-muted shrink-0 font-medium uppercase tracking-wider">Audition:</span>
                   {Object.keys(extractedMouthSet.sprites).map((shape) => {
                     const sp = extractedMouthSet.sprites[shape];
                     const isInspecting = selectedShapeToInspect === shape;
@@ -1444,19 +1435,19 @@ export const LipSyncModal: React.FC = () => {
                         key={shape}
                         type="button"
                         onClick={() => setSelectedShapeToInspect(shape)}
-                        className={`flex-shrink-0 flex items-center space-x-1.5 px-2 py-1 rounded border transition-colors relative ${
+                        className={`shrink-0 flex items-center space-x-1.5 px-2 py-1 rounded-editor-sm border transition-all relative ${
                           isInspecting
-                            ? 'border-purple-500 bg-purple-950/60 text-purple-300 font-bold'
-                            : 'border-editor-border bg-editor-subpanel text-gray-400 hover:border-gray-500'
+                            ? 'border-editor-accent bg-editor-accent/20 text-editor-text font-bold shadow-sm'
+                            : 'border-editor-border bg-editor-surface text-editor-secondary hover:border-editor-accent/50'
                         }`}
-                        title={`Audition shape ${shape}${isTuned ? ' (Tuned)' : ''}`}
+                        title={`Audition shape ${shape}${isTuned ? ' (Custom Tuned)' : ''}`}
                       >
-                        <div className="w-6 h-6 bg-black/40 rounded flex items-center justify-center overflow-hidden">
+                        <div className="w-5 h-5 bg-black/40 rounded flex items-center justify-center overflow-hidden border border-editor-border/40">
                           <img src={sp.url} alt={shape} className="w-full h-full object-contain" />
                         </div>
-                        <span className="text-[11px]">{shape}</span>
+                        <span className="text-[11px] font-mono">{shape}</span>
                         {isTuned && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-purple-400 absolute top-1 right-1" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-editor-accent absolute top-1 right-1" />
                         )}
                       </button>
                     );
@@ -1465,16 +1456,16 @@ export const LipSyncModal: React.FC = () => {
 
                 {/* Per-Shape Fine-Tuning Bar */}
                 {selectedShapeToInspect && (
-                  <div className="flex items-center justify-between bg-editor-subpanel/70 px-3 py-1.5 rounded border border-editor-border text-[11px]">
+                  <div className="flex items-center justify-between bg-editor-subpanel px-3 py-1.5 rounded-editor-sm border border-editor-border text-[11px]">
                     <div className="flex items-center space-x-3">
-                      <span className="font-semibold text-purple-300 flex items-center space-x-1">
-                        <SlidersHorizontal className="w-3 h-3 text-purple-400" />
-                        <span>Fine-Tune Shape [{selectedShapeToInspect}]:</span>
+                      <span className="font-semibold text-editor-accent flex items-center space-x-1">
+                        <SlidersHorizontal className="w-3 h-3 text-editor-accent" />
+                        <span>Tune [{selectedShapeToInspect}]:</span>
                       </span>
 
                       <div className="flex items-center space-x-1.5">
-                        <span className="text-gray-400">Scale:</span>
-                        <span className="font-mono text-gray-200 w-9">
+                        <span className="text-editor-muted">Scale:</span>
+                        <span className="font-mono text-editor-text w-9 font-medium">
                           {Math.round((shapeTunings[selectedShapeToInspect]?.scaleMultiplier ?? 1.0) * 100)}%
                         </span>
                         <input
@@ -1493,12 +1484,12 @@ export const LipSyncModal: React.FC = () => {
                               },
                             }));
                           }}
-                          className="w-20 accent-purple-500"
+                          className="w-20"
                         />
                       </div>
 
                       <div className="flex items-center space-x-1.5">
-                        <span className="text-gray-400">Vertical Offset:</span>
+                        <span className="text-editor-muted">Vertical Offset:</span>
                         <input
                           type="range"
                           min="-0.08"
@@ -1515,7 +1506,7 @@ export const LipSyncModal: React.FC = () => {
                               },
                             }));
                           }}
-                          className="w-16 accent-purple-500"
+                          className="w-16"
                           title="Fine-tune vertical alignment of this mouth shape"
                         />
                       </div>
@@ -1533,16 +1524,16 @@ export const LipSyncModal: React.FC = () => {
                               return next;
                             });
                           }}
-                          className="text-[10px] text-gray-400 hover:text-white underline"
+                          className="text-[10px] text-editor-muted hover:text-editor-text underline"
                         >
-                          Reset Shape [{selectedShapeToInspect}]
+                          Reset [{selectedShapeToInspect}]
                         </button>
                       )}
                       {Object.keys(shapeTunings).length > 0 && (
                         <button
                           type="button"
                           onClick={() => setShapeTunings({})}
-                          className="text-[10px] text-gray-500 hover:text-gray-300 underline ml-1"
+                          className="text-[10px] text-editor-muted hover:text-editor-text underline ml-1"
                         >
                           Reset All
                         </button>
@@ -1556,19 +1547,26 @@ export const LipSyncModal: React.FC = () => {
         </div>
 
         {/* Modal Footer */}
-        <div className="h-13 border-t border-editor-border px-5 py-2.5 flex items-center justify-between bg-editor-subpanel flex-shrink-0">
-          <div className="text-[11px] text-gray-400">
-            {extractedMouthSet
-              ? generatedCues.length > 0
-                ? `✓ ${generatedCues.length} speech cues synchronized (${sourceType.toUpperCase()}). Ready to add.`
-                : 'Mouth shapes extracted. Click "Generate Lip Sync" to align dialogue.'
-              : 'Select character and mouth sprite sheet above.'}
+        <div className="h-12 border-t border-editor-border px-4 py-2 flex items-center justify-between bg-editor-panel shrink-0">
+          <div className="text-[11px] text-editor-secondary flex items-center space-x-1.5">
+            {extractedMouthSet ? (
+              generatedCues.length > 0 ? (
+                <>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-editor-success shrink-0" />
+                  <span>{generatedCues.length} speech cues synchronized ({sourceType.toUpperCase()}). Ready to add to timeline.</span>
+                </>
+              ) : (
+                <span>Mouth shapes ready. Click "Generate Lip Sync" to synchronize dialogue.</span>
+              )
+            ) : (
+              <span>Select character image and mouth sprite sheet above to start.</span>
+            )}
           </div>
 
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2.5">
             <button
               onClick={() => setLipSyncModalOpen(false)}
-              className="px-3.5 py-1.5 rounded hover:bg-editor-panel text-gray-300"
+              className="px-3.5 py-1.5 rounded-editor-sm hover:bg-editor-hover border border-editor-border text-editor-secondary hover:text-editor-text font-medium transition-colors"
             >
               Cancel
             </button>
@@ -1576,7 +1574,7 @@ export const LipSyncModal: React.FC = () => {
             <button
               onClick={handleAddToTimeline}
               disabled={!extractedMouthSet || generatedCues.length === 0}
-              className="px-5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-medium flex items-center space-x-2 shadow"
+              className="px-4 py-1.5 rounded-editor-sm bg-editor-success hover:bg-editor-successHover disabled:opacity-35 text-white font-semibold flex items-center space-x-1.5 shadow-sm transition-all"
             >
               <Check className="w-4 h-4" />
               <span>Add to Timeline</span>

@@ -11,16 +11,12 @@ import {
   Smile,
   Download,
   FolderOpen,
-  Plus,
   Home,
-  Monitor,
-  Smartphone,
-  Square,
-  Sparkles,
   Ratio,
+  Sparkles,
 } from 'lucide-react';
 import { audioEngine } from '../../core/audio/audioEngine';
-import { ASPECT_RATIO_PRESETS, AspectRatioPreset, getProjectAspectRatio } from '../../types/project';
+import { AspectRatioPreset, getProjectAspectRatio } from '../../types/project';
 
 export const Toolbar: React.FC = () => {
   const {
@@ -39,10 +35,10 @@ export const Toolbar: React.FC = () => {
     setLipSyncModalOpen,
     setExportModalOpen,
     setProjectModalOpen,
+    setPromptModalOpen,
     newProject,
     setCurrentView,
     setAspectRatioPreset,
-    assets,
   } = useEditorStore();
 
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -124,90 +120,90 @@ export const Toolbar: React.FC = () => {
   };
 
   return (
-    <header className="h-14 bg-editor-panel border-b border-editor-border px-4 flex items-center justify-between select-none z-20">
-      {/* Brand & Project Hub Link */}
-      <div className="flex items-center space-x-3">
+    <header className="h-12 bg-editor-panel border-b border-editor-border px-3.5 flex items-center justify-between select-none z-20 shrink-0">
+      {/* Left: Brand, Project Navigation & Settings */}
+      <div className="flex items-center space-x-2.5">
+        {/* Brand & Project Selector Link */}
         <button
           onClick={() => setCurrentView('projects')}
-          title="Open Project Window Hub"
-          className="flex items-center space-x-2 group p-1 -m-1 rounded-lg hover:bg-editor-subpanel transition-colors"
+          title="Open Projects Hub"
+          className="flex items-center space-x-2.5 px-2 py-1 -ml-1 rounded-editor-md hover:bg-editor-hover transition-colors group"
         >
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-bold text-white text-base shadow">
+          <div className="w-7 h-7 rounded-editor-sm bg-editor-accentAction/20 border border-editor-accent/40 flex items-center justify-center font-bold text-editor-accent text-xs shadow-sm group-hover:border-editor-accent transition-colors">
             CS
           </div>
-          <div className="text-left">
-            <h1 className="text-sm font-semibold text-gray-100 leading-tight group-hover:text-blue-400 transition-colors flex items-center space-x-1">
-              <span>Cartoon Speaks</span>
-              <span className="text-blue-400 font-normal text-xs">v2</span>
-            </h1>
-            <p className="text-[11px] text-gray-400 leading-none truncate max-w-[140px]">{project.name}</p>
+          <div className="text-left flex items-baseline space-x-1.5">
+            <span className="text-xs font-semibold text-editor-text tracking-tight group-hover:text-white transition-colors">
+              Cartoon Speaks
+            </span>
+            <span className="text-[10px] font-medium text-editor-accent px-1 py-0.5 rounded bg-editor-accent/10 border border-editor-accent/20">
+              v2
+            </span>
           </div>
         </button>
 
-        <div className="h-6 w-px bg-editor-border mx-1" />
+        <div className="h-4 w-px bg-editor-border mx-1" />
 
-        {/* Project Navigation */}
+        {/* Current Project Name & Hub Switcher */}
         <button
           onClick={() => setCurrentView('projects')}
-          title="Switch to Projects Window Hub"
-          className="px-2 py-1.5 rounded hover:bg-editor-subpanel text-gray-300 hover:text-white flex items-center space-x-1.5 text-xs border border-editor-border/60"
+          title="Switch to Projects Hub"
+          className="h-8 px-2.5 rounded-editor-md bg-editor-subpanel hover:bg-editor-hover border border-editor-border text-editor-secondary hover:text-editor-text flex items-center space-x-1.5 text-xs transition-colors"
         >
-          <Home className="w-3.5 h-3.5 text-blue-400" />
-          <span className="hidden sm:inline">Projects Hub</span>
+          <Home className="w-3.5 h-3.5 text-editor-muted" />
+          <span className="font-medium text-editor-text max-w-[130px] truncate">{project.name}</span>
         </button>
 
         <button
           onClick={() => setProjectModalOpen(true)}
           title="Save or Export Project JSON"
-          className="px-2 py-1.5 rounded hover:bg-editor-subpanel text-gray-300 hover:text-white flex items-center space-x-1 text-xs"
+          className="h-8 px-2.5 rounded-editor-md bg-editor-subpanel hover:bg-editor-hover border border-editor-border text-editor-secondary hover:text-editor-text flex items-center space-x-1.5 text-xs transition-colors"
         >
-          <FolderOpen className="w-3.5 h-3.5 text-indigo-400" />
-          <span className="hidden sm:inline">Save / JSON</span>
+          <FolderOpen className="w-3.5 h-3.5 text-editor-muted" />
+          <span className="hidden md:inline font-medium">Save / JSON</span>
         </button>
 
-        <div className="h-6 w-px bg-editor-border mx-1" />
-
-        {/* Aspect Ratio Dropdown Selector */}
-        <div className="flex items-center space-x-1.5 bg-editor-subpanel border border-editor-border rounded-lg px-2 py-1">
-          <Ratio className="w-3.5 h-3.5 text-purple-400" />
+        {/* Aspect Ratio Selector */}
+        <div className="h-8 flex items-center space-x-1.5 bg-editor-subpanel border border-editor-border rounded-editor-md px-2.5 transition-colors focus-within:border-editor-accent">
+          <Ratio className="w-3.5 h-3.5 text-editor-accent shrink-0" />
           <select
             value={activeRatio}
             onChange={(e) => setAspectRatioPreset(e.target.value as AspectRatioPreset)}
-            className="bg-transparent text-gray-200 text-xs font-medium focus:outline-none cursor-pointer"
+            className="bg-transparent text-editor-text text-xs font-medium focus:outline-none cursor-pointer pr-1"
             title="Change Project Aspect Ratio"
           >
-            <option value="16:9" className="bg-editor-panel text-gray-100">16:9 Landscape (1920×1080)</option>
-            <option value="9:16" className="bg-editor-panel text-gray-100">9:16 Vertical (1080×1920)</option>
-            <option value="1:1" className="bg-editor-panel text-gray-100">1:1 Square (1080×1080)</option>
-            <option value="4:5" className="bg-editor-panel text-gray-100">4:5 Social (1080×1350)</option>
-            <option value="4:3" className="bg-editor-panel text-gray-100">4:3 Standard (1440×1080)</option>
+            <option value="16:9" className="bg-editor-elevated text-editor-text">16:9 Landscape (1920×1080)</option>
+            <option value="9:16" className="bg-editor-elevated text-editor-text">9:16 Vertical (1080×1920)</option>
+            <option value="1:1" className="bg-editor-elevated text-editor-text">1:1 Square (1080×1080)</option>
+            <option value="4:5" className="bg-editor-elevated text-editor-text">4:5 Social (1080×1350)</option>
+            <option value="4:3" className="bg-editor-elevated text-editor-text">4:3 Standard (1440×1080)</option>
             {activeRatio === 'custom' && (
-              <option value="custom" className="bg-editor-panel text-gray-100">Custom ({project.width}×{project.height})</option>
+              <option value="custom" className="bg-editor-elevated text-editor-text">Custom ({project.width}×{project.height})</option>
             )}
           </select>
         </div>
       </div>
 
-      {/* Center: Playback & History Controls */}
-      <div className="flex items-center space-x-2">
+      {/* Center: Playback & Undo/Redo Controls */}
+      <div className="flex items-center space-x-1">
         <button
           onClick={undo}
           disabled={historyIndex <= 0}
           title="Undo (Ctrl+Z)"
-          className="p-2 rounded hover:bg-editor-subpanel text-gray-300 disabled:opacity-40 disabled:hover:bg-transparent"
+          className="w-8 h-8 rounded-editor-sm flex items-center justify-center text-editor-secondary hover:text-editor-text hover:bg-editor-hover active:bg-editor-active disabled:opacity-30 disabled:pointer-events-none transition-colors"
         >
-          <Undo2 className="w-4 h-4" />
+          <Undo2 className="w-3.5 h-3.5" />
         </button>
         <button
           onClick={redo}
           disabled={historyIndex >= history.length - 1}
           title="Redo (Ctrl+Y)"
-          className="p-2 rounded hover:bg-editor-subpanel text-gray-300 disabled:opacity-40 disabled:hover:bg-transparent"
+          className="w-8 h-8 rounded-editor-sm flex items-center justify-center text-editor-secondary hover:text-editor-text hover:bg-editor-hover active:bg-editor-active disabled:opacity-30 disabled:pointer-events-none transition-colors"
         >
-          <Redo2 className="w-4 h-4" />
+          <Redo2 className="w-3.5 h-3.5" />
         </button>
 
-        <div className="h-6 w-px bg-editor-border mx-1" />
+        <div className="h-4 w-px bg-editor-border mx-1" />
 
         <button
           onClick={() => {
@@ -216,22 +212,22 @@ export const Toolbar: React.FC = () => {
             setCurrentTime(0);
           }}
           title="Rewind to Start"
-          className="p-2 rounded hover:bg-editor-subpanel text-gray-300"
+          className="w-8 h-8 rounded-editor-sm flex items-center justify-center text-editor-secondary hover:text-editor-text hover:bg-editor-hover active:bg-editor-active transition-colors"
         >
-          <RotateCcw className="w-4 h-4" />
+          <RotateCcw className="w-3.5 h-3.5" />
         </button>
 
         <button
           onClick={handleTogglePlay}
           title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
-          className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium flex items-center space-x-1.5 shadow"
+          className="h-8 px-3 rounded-editor-md bg-editor-accentAction hover:bg-editor-accent text-white font-medium flex items-center space-x-1.5 shadow-sm transition-all active:scale-[0.98]"
         >
-          {isPlaying ? <Pause className="w-4 h-4 fill-white" /> : <Play className="w-4 h-4 fill-white" />}
+          {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current ml-0.5" />}
           <span className="text-xs">{isPlaying ? 'Pause' : 'Play'}</span>
         </button>
       </div>
 
-      {/* Right: Imports, Lip Sync & Export */}
+      {/* Right: Imports, Lip Sync & Primary Export */}
       <div className="flex items-center space-x-2">
         {/* Hidden inputs */}
         <input
@@ -253,41 +249,51 @@ export const Toolbar: React.FC = () => {
 
         <button
           onClick={() => imageInputRef.current?.click()}
-          className="px-2.5 py-1.5 rounded bg-editor-subpanel hover:bg-editor-hover text-gray-200 text-xs flex items-center space-x-1.5 border border-editor-border"
-          title="Import image files"
+          className="h-8 px-2.5 rounded-editor-md bg-editor-subpanel hover:bg-editor-hover border border-editor-border text-editor-secondary hover:text-editor-text text-xs flex items-center space-x-1.5 transition-colors"
+          title="Import image files (PNG, JPG, WebP)"
         >
-          <ImageIcon className="w-4 h-4 text-emerald-400" />
-          <span>Import Image</span>
+          <ImageIcon className="w-3.5 h-3.5 text-editor-muted" />
+          <span className="font-medium">Import Image</span>
         </button>
 
         <button
           onClick={() => audioInputRef.current?.click()}
-          className="px-2.5 py-1.5 rounded bg-editor-subpanel hover:bg-editor-hover text-gray-200 text-xs flex items-center space-x-1.5 border border-editor-border"
-          title="Import audio files"
+          className="h-8 px-2.5 rounded-editor-md bg-editor-subpanel hover:bg-editor-hover border border-editor-border text-editor-secondary hover:text-editor-text text-xs flex items-center space-x-1.5 transition-colors"
+          title="Import spoken audio files (WAV, MP3)"
         >
-          <Music className="w-4 h-4 text-amber-400" />
-          <span>Import Audio</span>
+          <Music className="w-3.5 h-3.5 text-editor-muted" />
+          <span className="font-medium">Import Audio</span>
         </button>
 
-        <div className="h-6 w-px bg-editor-border mx-1" />
+        {/* Prompts Modal Launcher */}
+        <button
+          onClick={() => setPromptModalOpen(true)}
+          className="h-8 px-2.5 rounded-editor-md bg-editor-subpanel hover:bg-editor-hover border border-editor-border text-editor-secondary hover:text-editor-text text-xs flex items-center space-x-1.5 transition-colors"
+          title="Open AI Prompt Templates (Script, Storyboard, Faces, Sprite Sheet)"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-editor-accent" />
+          <span className="font-medium">Prompts</span>
+        </button>
+
+        <div className="h-4 w-px bg-editor-border mx-0.5" />
 
         {/* Lip Sync Modal Launcher */}
         <button
           onClick={() => setLipSyncModalOpen(true)}
-          className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-medium text-xs flex items-center space-x-1.5 shadow"
-          title="Open Lip-Sync Generator"
+          className="h-8 px-3 rounded-editor-md bg-editor-subpanel hover:bg-editor-hover border border-editor-accent/50 text-editor-accent hover:text-editor-accentHover font-semibold text-xs flex items-center space-x-1.5 shadow-sm transition-colors"
+          title="Open Lip-Sync Generator Workspace"
         >
-          <Smile className="w-4 h-4" />
+          <Smile className="w-3.5 h-3.5 text-editor-accent" />
           <span>Lip Sync</span>
         </button>
 
-        {/* Video Export Button */}
+        {/* Video Export Button (Sole Emerald Primary Action) */}
         <button
           onClick={() => setExportModalOpen(true)}
-          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs flex items-center space-x-1.5 shadow"
+          className="h-8 px-3.5 rounded-editor-md bg-editor-success hover:bg-editor-successHover text-white font-semibold text-xs flex items-center space-x-1.5 shadow-sm transition-all active:scale-[0.98]"
           title="Export project to MP4"
         >
-          <Download className="w-4 h-4" />
+          <Download className="w-3.5 h-3.5" />
           <span>Export Video</span>
         </button>
       </div>
