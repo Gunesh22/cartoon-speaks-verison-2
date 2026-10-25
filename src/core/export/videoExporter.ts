@@ -3,10 +3,14 @@ import { EditorAsset, MouthSetAsset } from '../../types/assets';
 import { renderCompositionFrame } from '../renderer/canvasRenderer';
 import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
 import { audioEngine } from '../audio/audioEngine';
+import { calculateProjectDuration } from '../timeline/timelineMath';
 
 export interface ExportSettings {
   resolution: '720p' | '1080p';
   fps: number;
+  format?: 'mp4' | 'webm-alpha';
+  transparent?: boolean;
+  range?: { start: number; end: number };
 }
 
 export interface ExportProgress {
@@ -18,13 +22,20 @@ export interface ExportProgress {
 
 /**
  * Mixes all project audio clips into a single AudioBuffer using OfflineAudioContext.
+ * Supports exporting specific In/Out range (Feature 15).
  */
 export async function mixProjectAudio(
   project: EditorProject,
   assets: Map<string, EditorAsset>,
-  sampleRate: number = 44100
+  sampleRate: number = 44100,
+  range?: { start: number; end: number }
 ): Promise<AudioBuffer | null> {
-  if (project.duration <= 0) {
+  const rangeStart = range ? Math.max(0, range.start) : 0;
+  const effectiveMax = calculateProjectDuration(project.tracks, project.audioClips, project.duration);
+  const rangeEnd = range ? Math.min(effectiveMax, range.end) : effectiveMax;
+  const rangeDuration = Math.max(0, rangeEnd - rangeStart);
+
+  if (rangeDuration <= 0) {
     return null;
   }
 
@@ -34,47 +45,64 @@ export async function mixProjectAudio(
     duration: number;
     volume: number;
     trimStart: number;
+    clipDuration: number;
+    clipTimeStart: number;
+    clipTimeEnd: number;
+    fadeIn?: number;
+    fadeOut?: number;
   }
 
   const schedule: AudioScheduleItem[] = [];
+  const trackSettings = project.audioTrackSettings;
+  const hasSolo = !!(trackSettings?.A1?.solo || trackSettings?.A2?.solo);
 
   // 1. Gather all explicit audio clips from the timeline
+  // Strict WYSIWYG: project.audioClips is the single authoritative source of truth for audio.
   for (const clip of project.audioClips) {
+    const trackId = clip.trackId || 'A1';
+    const conf = trackSettings?.[trackId];
+    if (hasSolo) {
+      if (!conf?.solo) continue;
+    } else if (conf?.muted) {
+      continue;
+    }
+
+    const clipEnd = clip.start + clip.duration;
+    if (clipEnd <= rangeStart || clip.start >= rangeEnd) {
+      // Audio clip is outside requested export range
+      continue;
+    }
+
+    const overlapStart = Math.max(clip.start, rangeStart);
+    const overlapEnd = Math.min(clipEnd, rangeEnd);
+    const scheduledStart = overlapStart - rangeStart;
+    const scheduledDuration = overlapEnd - overlapStart;
+    const offsetFromClipStart = overlapStart - clip.start;
+    const scheduledTrimStart = (clip.trimStart ?? 0) + offsetFromClipStart;
+    const clipTimeStart = offsetFromClipStart;
+    const clipTimeEnd = overlapEnd - clip.start;
+    const trackVol = conf?.volume ?? 1.0;
+    const effectiveVolume = (clip.volume ?? 1) * trackVol;
+
     schedule.push({
       assetId: clip.assetId,
-      start: clip.start,
-      duration: clip.duration,
-      volume: clip.volume ?? 1,
-      trimStart: clip.trimStart ?? 0,
+      start: scheduledStart,
+      duration: scheduledDuration,
+      volume: effectiveVolume,
+      trimStart: scheduledTrimStart,
+      clipDuration: clip.duration,
+      clipTimeStart,
+      clipTimeEnd,
+      fadeIn: clip.fadeIn ?? 0,
+      fadeOut: clip.fadeOut ?? 0,
     });
-  }
-
-  // 2. Also check visual tracks for lipSync clips that reference an audio asset
-  for (const track of project.tracks) {
-    for (const clip of track.clips) {
-      if (clip.visible && clip.type === 'lipSync' && clip.lipSyncData?.audioAssetId) {
-        const audioId = clip.lipSyncData.audioAssetId;
-        const alreadyScheduled = schedule.some(
-          (s) => s.assetId === audioId && Math.abs(s.start - clip.start) < 0.2
-        );
-        if (!alreadyScheduled) {
-          schedule.push({
-            assetId: audioId,
-            start: clip.start,
-            duration: clip.duration,
-            volume: 1.0,
-            trimStart: 0,
-          });
-        }
-      }
-    }
   }
 
   if (schedule.length === 0) {
     return null;
   }
 
-  const lengthSamples = Math.max(1, Math.ceil(project.duration * sampleRate));
+  const lengthSamples = Math.max(1, Math.ceil(rangeDuration * sampleRate));
   const OfflineCtx =
     typeof window !== 'undefined'
       ? window.OfflineAudioContext ||
@@ -119,16 +147,54 @@ export async function mixProjectAudio(
       source.buffer = decoded;
 
       const gain = offlineCtx.createGain();
-      gain.gain.value = Math.max(0, Math.min(1, item.volume));
-      source.connect(gain);
-      gain.connect(offlineCtx.destination);
+      const targetVol = Math.max(0, Math.min(1, item.volume));
+      gain.gain.value = targetVol;
 
       const startOnTimeline = Math.max(0, item.start);
       const offset = Math.max(0, item.trimStart);
       const remainingInBuffer = Math.max(0, decoded.duration - offset);
       const duration = Math.min(item.duration, remainingInBuffer);
 
-      if (duration > 0 && startOnTimeline < project.duration) {
+      // Apply Fade In / Fade Out Envelopes with exact range-boundary slicing
+      const clipFadeIn = Math.min(item.clipDuration / 2, Math.max(0, item.fadeIn || 0));
+      const clipFadeOut = Math.min(item.clipDuration / 2, Math.max(0, item.fadeOut || 0));
+      const clipFadeOutStart = item.clipDuration - clipFadeOut;
+
+      // 1. Initial gain at startOnTimeline
+      let initialGain = targetVol;
+      if (clipFadeIn > 0 && item.clipTimeStart < clipFadeIn) {
+        initialGain = (item.clipTimeStart / clipFadeIn) * targetVol;
+      }
+      if (typeof gain.gain.setValueAtTime === 'function') {
+        gain.gain.setValueAtTime(initialGain, startOnTimeline);
+      }
+
+      // 2. Fade-in ramp if range intersects the fade-in region
+      if (clipFadeIn > 0 && item.clipTimeStart < clipFadeIn) {
+        const rampDuration = Math.min(duration, clipFadeIn - item.clipTimeStart);
+        if (rampDuration > 0 && typeof gain.gain.linearRampToValueAtTime === 'function') {
+          const reachedGain = ((item.clipTimeStart + rampDuration) / clipFadeIn) * targetVol;
+          gain.gain.linearRampToValueAtTime(reachedGain, startOnTimeline + rampDuration);
+        }
+      }
+
+      // 3. Fade-out ramp if range intersects the fade-out region
+      if (clipFadeOut > 0 && item.clipTimeEnd > clipFadeOutStart) {
+        const fadeOutRampStartOffset = Math.max(0, clipFadeOutStart - item.clipTimeStart);
+        const rampStartTime = startOnTimeline + fadeOutRampStartOffset;
+        if (fadeOutRampStartOffset > 0 && typeof gain.gain.setValueAtTime === 'function') {
+          gain.gain.setValueAtTime(targetVol, rampStartTime);
+        }
+        if (typeof gain.gain.linearRampToValueAtTime === 'function') {
+          const endGain = Math.max(0, (item.clipDuration - item.clipTimeEnd) / clipFadeOut) * targetVol;
+          gain.gain.linearRampToValueAtTime(endGain, startOnTimeline + duration);
+        }
+      }
+
+      source.connect(gain);
+      gain.connect(offlineCtx.destination);
+
+      if (duration > 0 && startOnTimeline < rangeDuration) {
         source.start(startOnTimeline, offset, duration);
         hasValidClips = true;
       }
@@ -151,15 +217,20 @@ async function exportWithWebCodecs(
   targetWidth: number,
   targetHeight: number,
   fps: number,
+  range?: { start: number; end: number },
   onProgress?: (p: ExportProgress) => void,
   checkCancelled?: () => boolean
 ): Promise<Blob> {
   const muxerTarget = new ArrayBufferTarget();
-  const totalFrames = Math.ceil(project.duration * fps);
+  const rangeStart = range ? Math.max(0, range.start) : 0;
+  const effectiveMax = calculateProjectDuration(project.tracks, project.audioClips, project.duration);
+  const rangeEnd = range ? Math.min(effectiveMax, range.end) : effectiveMax;
+  const rangeDuration = Math.max(0.05, rangeEnd - rangeStart);
+  const totalFrames = Math.ceil(rangeDuration * fps);
 
   // Mix audio first
   onProgress?.({ frame: 0, totalFrames, percentage: 2, status: 'Mixing audio...' });
-  const mixedAudio = await mixProjectAudio(project, assets, 44100);
+  const mixedAudio = await mixProjectAudio(project, assets, 44100, range);
 
   // Setup audio encoder with interleaved frame encoding and robust chunk duration
   let audioEncoder: AudioEncoder | null = null;
@@ -319,7 +390,7 @@ async function exportWithWebCodecs(
       throw new Error('Export cancelled by user');
     }
 
-    const time = f / fps;
+    const time = rangeStart + f / fps;
     const nextFrameTimeMicros = Math.round(((f + 1) / fps) * 1_000_000);
 
     // Interleave audio encoding up to this video frame
@@ -388,6 +459,11 @@ async function exportWithMediaRecorder(
   targetWidth: number,
   targetHeight: number,
   fps: number,
+  options?: {
+    transparent?: boolean;
+    format?: 'mp4' | 'webm-alpha';
+    range?: { start: number; end: number };
+  },
   onProgress?: (p: ExportProgress) => void,
   checkCancelled?: () => boolean
 ): Promise<Blob> {
@@ -401,12 +477,19 @@ async function exportWithMediaRecorder(
   exportCanvas.height = targetHeight;
   const exportCtx = exportCanvas.getContext('2d')!;
 
+  const isAlphaWebm = options?.format === 'webm-alpha' || !!options?.transparent;
+  const rangeStart = options?.range ? Math.max(0, options.range.start) : 0;
+  const effectiveMax = calculateProjectDuration(project.tracks, project.audioClips, project.duration);
+  const rangeEnd = options?.range ? Math.min(effectiveMax, options.range.end) : effectiveMax;
+  const rangeDuration = Math.max(0.05, rangeEnd - rangeStart);
+
   const needsScaling = targetWidth !== project.width || targetHeight !== project.height;
   const stream = exportCanvas.captureStream(fps);
 
   // Mix audio if available
-  const mixedAudio = await mixProjectAudio(project, assets, 44100);
+  const mixedAudio = await mixProjectAudio(project, assets, 44100, options?.range);
   let audioCtx: AudioContext | null = null;
+  let audioSourceNode: AudioBufferSourceNode | null = null;
   if (mixedAudio) {
     try {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -416,10 +499,9 @@ async function exportWithMediaRecorder(
           await audioCtx.resume().catch(() => {});
         }
         const dest = audioCtx.createMediaStreamDestination();
-        const src = audioCtx.createBufferSource();
-        src.buffer = mixedAudio;
-        src.connect(dest);
-        src.start();
+        audioSourceNode = audioCtx.createBufferSource();
+        audioSourceNode.buffer = mixedAudio;
+        audioSourceNode.connect(dest);
         dest.stream.getAudioTracks().forEach((t) => stream.addTrack(t));
       }
     } catch (e) {
@@ -427,14 +509,28 @@ async function exportWithMediaRecorder(
     }
   }
 
-  const mimeType = [
-    'video/mp4;codecs="avc1.42E01E,mp4a.40.2"',
-    'video/mp4;codecs=avc1,aac',
-    'video/mp4',
-    'video/webm;codecs="vp9,opus"',
-    'video/webm;codecs="vp8,opus"',
-    'video/webm',
-  ].find((m) => MediaRecorder.isTypeSupported(m)) || 'video/webm';
+  let mimeType = 'video/webm';
+  if (isAlphaWebm) {
+    const supportedAlpha = typeof MediaRecorder !== 'undefined'
+      ? ['video/webm;codecs=vp9', 'video/webm;codecs=vp8'].find((m) => MediaRecorder.isTypeSupported(m))
+      : undefined;
+
+    if (!supportedAlpha && typeof MediaRecorder !== 'undefined') {
+      throw new Error(
+        'Transparent video export requires VP9 or VP8 WebM encoding support in MediaRecorder, which is not supported in this browser. Please use Chrome, Brave, or Edge for transparent export.'
+      );
+    }
+    mimeType = supportedAlpha || 'video/webm;codecs=vp9';
+  } else {
+    mimeType = [
+      'video/mp4;codecs="avc1.42E01E,mp4a.40.2"',
+      'video/mp4;codecs=avc1,aac',
+      'video/mp4',
+      'video/webm;codecs="vp9,opus"',
+      'video/webm;codecs="vp8,opus"',
+      'video/webm',
+    ].find((m) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m)) || 'video/webm';
+  }
 
   const recordedChunks: Blob[] = [];
   const recorder = new MediaRecorder(stream, { mimeType });
@@ -445,23 +541,48 @@ async function exportWithMediaRecorder(
     }
   };
 
-  const totalFrames = Math.ceil(project.duration * fps);
+  const totalDurationMs = rangeDuration * 1000;
+  const frameDurationMs = 1000 / fps;
+  const totalFrames = Math.ceil(rangeDuration * fps);
   recorder.start();
 
-  for (let f = 0; f < totalFrames; f++) {
+  // Start real-time audio playback strictly in lockstep with recorder start
+  if (audioSourceNode) {
+    try {
+      audioSourceNode.start(0);
+    } catch (e) {
+      console.warn('AudioSourceNode start failed:', e);
+    }
+  }
+
+  const exportStartTime = performance.now();
+  let frameCount = 0;
+
+  while (true) {
     if (checkCancelled && checkCancelled()) {
       recorder.stop();
+      if (audioSourceNode) {
+        try { audioSourceNode.stop(); } catch (_) {}
+      }
       if (audioCtx) audioCtx.close().catch(() => {});
       throw new Error('Export cancelled by user');
     }
 
-    const time = f / fps;
-    const pct = Math.round((f / totalFrames) * 95);
+    const elapsedMs = performance.now() - exportStartTime;
+    if (elapsedMs >= totalDurationMs) {
+      break;
+    }
+
+    // Visual composition timestamp is strictly locked to range
+    const time = Math.min(rangeEnd, rangeStart + elapsedMs / 1000);
+    frameCount++;
+
+    const pct = Math.min(95, Math.round((elapsedMs / totalDurationMs) * 95));
     onProgress?.({
-      frame: f + 1,
+      frame: frameCount,
       totalFrames,
       percentage: pct,
-      status: `Capturing frame ${f + 1}/${totalFrames}`,
+      status: `Capturing frame ${frameCount}/${totalFrames}`,
     });
 
     await renderCompositionFrame(compCtx, {
@@ -471,6 +592,7 @@ async function exportWithMediaRecorder(
       assets,
       mouthSets,
       showCheckerboard: false,
+      transparent: isAlphaWebm,
     });
 
     if (needsScaling) {
@@ -481,12 +603,39 @@ async function exportWithMediaRecorder(
       exportCtx.drawImage(compCanvas, 0, 0);
     }
 
-    // Wait 1 frame duration
-    await new Promise((r) => setTimeout(r, 1000 / fps));
+    // Precise frame pacing against elapsed wall clock:
+    // sleep remaining time until next frame deadline, preventing cumulative drift
+    const nextTargetTime = exportStartTime + frameCount * frameDurationMs;
+    const remainingWaitMs = nextTargetTime - performance.now();
+    if (remainingWaitMs > 0) {
+      await new Promise((r) => setTimeout(r, remainingWaitMs));
+    }
   }
+
+  // Render final frame at rangeEnd to ensure visual completeness
+  await renderCompositionFrame(compCtx, {
+    canvas: compCanvas,
+    project,
+    time: rangeEnd,
+    assets,
+    mouthSets,
+    showCheckerboard: false,
+    transparent: isAlphaWebm,
+  });
+  if (needsScaling) {
+    exportCtx.clearRect(0, 0, targetWidth, targetHeight);
+    exportCtx.drawImage(compCanvas, 0, 0, targetWidth, targetHeight);
+  } else {
+    exportCtx.clearRect(0, 0, targetWidth, targetHeight);
+    exportCtx.drawImage(compCanvas, 0, 0);
+  }
+  await new Promise((r) => setTimeout(r, Math.max(20, Math.round(frameDurationMs / 2))));
 
   return new Promise<Blob>((resolve) => {
     recorder.onstop = () => {
+      if (audioSourceNode) {
+        try { audioSourceNode.stop(); } catch (_) {}
+      }
       if (audioCtx) audioCtx.close().catch(() => {});
       const finalBlob = new Blob(recordedChunks, { type: mimeType });
       resolve(finalBlob);
@@ -520,7 +669,7 @@ export function calculateExportDimensions(
 /**
  * Main Video Export entrypoint.
  * Automatically selects WebCodecs + mp4-muxer for high quality MP4,
- * or falls back safely to MediaRecorder.
+ * or WebM with alpha for transparent video export, or falls back safely to MediaRecorder.
  */
 export async function exportProjectVideo(
   project: EditorProject,
@@ -538,13 +687,14 @@ export async function exportProjectVideo(
   );
 
   const fps = settings.fps || 30;
+  const isTransparent = settings.format === 'webm-alpha' || !!settings.transparent;
 
   let blob: Blob;
-  let ext = 'mp4';
+  let ext = isTransparent ? 'webm' : 'mp4';
 
   const hasWebCodecs = typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined';
 
-  if (hasWebCodecs) {
+  if (!isTransparent && hasWebCodecs) {
     try {
       blob = await exportWithWebCodecs(
         project,
@@ -553,6 +703,7 @@ export async function exportProjectVideo(
         targetWidth,
         targetHeight,
         fps,
+        settings.range,
         onProgress,
         checkCancelled
       );
@@ -565,6 +716,7 @@ export async function exportProjectVideo(
         targetWidth,
         targetHeight,
         fps,
+        { transparent: isTransparent, format: settings.format, range: settings.range },
         onProgress,
         checkCancelled
       );
@@ -578,6 +730,7 @@ export async function exportProjectVideo(
       targetWidth,
       targetHeight,
       fps,
+      { transparent: isTransparent, format: settings.format, range: settings.range },
       onProgress,
       checkCancelled
     );
@@ -585,11 +738,20 @@ export async function exportProjectVideo(
   }
 
   const safeName = project.name.replace(/[^a-zA-Z0-9_-]/g, '_') || 'Cartoon_Speaks_V2';
-  const filename = `${safeName}_${settings.resolution}_${fps}fps.${ext}`;
+  const rangeTag = settings.range
+    ? `_range_${settings.range.start.toFixed(1)}s-${settings.range.end.toFixed(1)}s`
+    : '';
+  const alphaTag = isTransparent ? '_alpha' : '';
+  const filename = `${safeName}_${settings.resolution}_${fps}fps${rangeTag}${alphaTag}.${ext}`;
+
+  const rangeDuration = settings.range
+    ? Math.max(0.05, settings.range.end - settings.range.start)
+    : project.duration;
+  const totalFrames = Math.ceil(rangeDuration * fps);
 
   onProgress?.({
-    frame: Math.ceil(project.duration * fps),
-    totalFrames: Math.ceil(project.duration * fps),
+    frame: totalFrames,
+    totalFrames,
     percentage: 100,
     status: 'Export complete!',
   });

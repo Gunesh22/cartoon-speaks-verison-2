@@ -27,6 +27,12 @@ export function getProjectAspectRatio(width: number, height: number): AspectRati
   return 'custom';
 }
 
+export interface AudioTrackSettings {
+  volume: number; // 0..1, default 1.0
+  muted: boolean; // default false
+  solo: boolean; // default false
+}
+
 export interface EditorProject {
   id: string;
   name: string;
@@ -34,8 +40,13 @@ export interface EditorProject {
   height: number;
   fps: number;
   duration: number; // total duration in seconds
+  autoFitToStory?: boolean; // When true, playback and export end at storyEnd (visuals + dialogue) without trimming music
   tracks: Track[];
   audioClips: AudioClip[];
+  audioTrackSettings?: {
+    A1?: AudioTrackSettings;
+    A2?: AudioTrackSettings;
+  };
   createdAt: number;
   updatedAt: number;
 }
@@ -53,6 +64,7 @@ export function createDefaultProject(
     height,
     fps,
     duration: 10, // 10 seconds default
+    autoFitToStory: true,
     tracks: [
       { id: 'V1', clips: [] },
       { id: 'V2', clips: [] },
@@ -60,6 +72,10 @@ export function createDefaultProject(
       { id: 'V4', clips: [] },
     ],
     audioClips: [],
+    audioTrackSettings: {
+      A1: { volume: 1.0, muted: false, solo: false },
+      A2: { volume: 0.8, muted: false, solo: false },
+    },
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };

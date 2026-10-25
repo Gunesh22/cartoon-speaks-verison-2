@@ -1,7 +1,8 @@
 import { create } from 'zustand';
-import { EditorProject, createDefaultProject, AspectRatioPreset, ASPECT_RATIO_PRESETS } from '../types/project';
-import { TrackId, VisualClip, AudioClip } from '../types/timeline';
+import { EditorProject, createDefaultProject, AspectRatioPreset, ASPECT_RATIO_PRESETS, AudioTrackSettings } from '../types/project';
+import { TrackId, VisualClip, AudioClip, AudioTrackId, TransformKeyframe } from '../types/timeline';
 import { EditorAsset, MouthSetAsset } from '../types/assets';
+import { setKeyframe, deleteKeyframe } from '../core/timeline/keyframeMath';
 import {
   moveVisualClip,
   trimClipStart,
@@ -10,10 +11,16 @@ import {
   snapTimeToTargets,
   validateTracks,
   calculateProjectDuration,
+  getTimelineContentEndTime,
+  getStoryEnd,
+  getTimelineEnd,
+  getEffectiveAnimationDuration,
   calculateFitToScreen,
 } from '../core/timeline/timelineMath';
 import {
   saveProjectToDb,
+  saveSnapshotToDb,
+  restoreSnapshotFromDb,
   loadAllAssets,
   loadAllMouthSets,
   saveAsset as dbSaveAsset,
@@ -23,6 +30,7 @@ import {
   clearAllAssetsFromDb,
 } from '../core/assets/assetDb';
 import { audioEngine } from '../core/audio/audioEngine';
+import { clearWaveformCache } from '../core/audio/waveformGenerator';
 
 export type CurrentScreenView = 'projects' | 'editor';
 
@@ -39,10 +47,17 @@ interface EditorState {
   canvasZoom: number;
   showCheckerboard: boolean;
   diagnosticMode: boolean;
+  showSafeZones: boolean;
+  showRulers: boolean;
+  canvasGuides: Array<{ id: string; orientation: 'horizontal' | 'vertical'; position: number }>;
+  showStoryboard: boolean;
+  activeTool: 'select' | 'razor';
+  inOutRange: { in: number | null; out: number | null };
   isLipSyncModalOpen: boolean;
   isExportModalOpen: boolean;
   isProjectModalOpen: boolean;
   isPromptModalOpen: boolean;
+  isRecordModalOpen: boolean;
   history: EditorProject[];
   historyIndex: number;
 
@@ -59,6 +74,8 @@ interface EditorState {
   setProjectDimensions: (width: number, height: number) => void;
   setAspectRatioPreset: (preset: AspectRatioPreset) => void;
   setProjectDuration: (duration: number) => void;
+  fitTimelineToContent: () => void;
+  setAutoFitToStory: (enabled: boolean) => void;
   setCurrentTime: (time: number) => void;
   setIsPlaying: (isPlaying: boolean) => void;
   togglePlay: () => Promise<void>;
@@ -67,10 +84,31 @@ interface EditorState {
   setCanvasZoom: (zoom: number) => void;
   toggleCheckerboard: () => void;
   toggleDiagnosticMode: () => void;
+  toggleSafeZones: () => void;
+  toggleRulers: () => void;
+  addCanvasGuide: (orientation: 'horizontal' | 'vertical', position: number) => void;
+  removeCanvasGuide: (id: string) => void;
+  clearCanvasGuides: () => void;
+  toggleStoryboard: () => void;
+  setActiveTool: (tool: 'select' | 'razor') => void;
+  setInPoint: (time: number | null) => void;
+  setOutPoint: (time: number | null) => void;
+  clearInOutRange: () => void;
   setLipSyncModalOpen: (open: boolean) => void;
   setExportModalOpen: (open: boolean) => void;
   setProjectModalOpen: (open: boolean) => void;
   setPromptModalOpen: (open: boolean) => void;
+  setRecordModalOpen: (open: boolean) => void;
+  setSnapshotModalOpen: (open: boolean) => void;
+
+  // Auto-Save and Version Snapshots (Feature 17)
+  lastSavedAt: number | null;
+  isSaving: boolean;
+  isAutosaveEnabled: boolean;
+  isSnapshotModalOpen: boolean;
+  setAutosaveEnabled: (enabled: boolean) => void;
+  createSnapshot: (name?: string) => Promise<string>;
+  restoreSnapshot: (snapshotId: string) => Promise<boolean>;
   
   // Asset Actions
   addAsset: (asset: Omit<EditorAsset, 'url'>) => Promise<EditorAsset>;
@@ -86,17 +124,59 @@ interface EditorState {
   moveClip: (clipId: string, newStart: number, targetTrackId?: TrackId, recordHistory?: boolean) => void;
   trimClip: (clipId: string, edge: 'start' | 'end', newTime: number, recordHistory?: boolean) => void;
   duplicateClip: (clipId: string) => void;
+  splitClip: (clipId: string, splitTime?: number) => void;
   removeClip: (clipId: string) => void;
   fitClipToScreen: (clipId: string, mode?: 'contain' | 'cover') => void;
   centerClipOnScreen: (clipId: string) => void;
   resetClipSize: (clipId: string) => void;
 
-  // Audio Clip Actions
-  addAudioClip: (clip: AudioClip) => void;
+  // Audio Clip Actions (Feature 07)
+  addAudioClip: (clip: AudioClip, trackId?: AudioTrackId) => void;
   updateAudioClip: (clipId: string, updates: Partial<AudioClip>, recordHistory?: boolean) => void;
-  moveAudioClip: (clipId: string, newStart: number, recordHistory?: boolean) => void;
+  moveAudioClip: (clipId: string, newStart: number, targetTrackId?: AudioTrackId, recordHistory?: boolean) => void;
   trimAudioClip: (clipId: string, edge: 'start' | 'end', newTime: number, recordHistory?: boolean) => void;
   removeAudioClip: (clipId: string) => void;
+  setAudioTrackSettings: (trackId: AudioTrackId, settings: Partial<AudioTrackSettings>) => void;
+
+  // Keyframe Actions (Feature 11)
+  addKeyframe: (clipId: string, timeOrKeyframe: number | TransformKeyframe, properties?: Partial<TransformKeyframe>) => void;
+  removeKeyframe: (clipId: string, keyframeId: string) => void;
+  updateKeyframe: (clipId: string, keyframeId: string, updates: Partial<TransformKeyframe>) => void;
+}
+
+let autosaveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleAutosave(): void {
+  if (autosaveTimeout) {
+    clearTimeout(autosaveTimeout);
+  }
+  autosaveTimeout = setTimeout(async () => {
+    const state = useEditorStore.getState();
+    if (!state.isAutosaveEnabled || state.isPlaying) return;
+    try {
+      useEditorStore.setState({ isSaving: true });
+      await saveProjectToDb(state.project);
+      await saveSnapshotToDb(state.project.id, state.project, true, 'Autosave');
+      useEditorStore.setState({ isSaving: false, lastSavedAt: Date.now() });
+    } catch (e) {
+      console.warn('Autosave failed:', e);
+      useEditorStore.setState({ isSaving: false });
+    }
+  }, 3000);
+}
+
+function clampPlaybackToDuration(
+  duration: number,
+  currentTime: number,
+  isPlaying: boolean
+): { currentTime: number; isPlaying: boolean } {
+  if (currentTime >= duration) {
+    if (isPlaying) {
+      audioEngine.stop();
+    }
+    return { currentTime: duration, isPlaying: false };
+  }
+  return { currentTime, isPlaying };
 }
 
 export const useEditorStore = create<EditorState>((set, get) => ({
@@ -112,10 +192,23 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   canvasZoom: 0.6,
   showCheckerboard: false,
   diagnosticMode: false,
+  showSafeZones: false,
+  showRulers: false,
+  canvasGuides: [],
+  showStoryboard: false,
+  activeTool: 'select',
+  inOutRange: { in: null, out: null },
   isLipSyncModalOpen: false,
   isExportModalOpen: false,
   isProjectModalOpen: false,
   isPromptModalOpen: false,
+  isRecordModalOpen: false,
+  isSnapshotModalOpen: false,
+  lastSavedAt: null,
+  isSaving: false,
+  isAutosaveEnabled: true,
+  setSnapshotModalOpen: (open: boolean) => set({ isSnapshotModalOpen: open }),
+  setAutosaveEnabled: (enabled: boolean) => set({ isAutosaveEnabled: enabled }),
   history: [],
   historyIndex: -1,
 
@@ -134,13 +227,29 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const mouthSetMap = new Map<string, MouthSetAsset>();
       for (const m of storedMouthSets) mouthSetMap.set(m.id, m);
 
-      set({ assets: assetMap, mouthSets: mouthSetMap });
+      // Auto-recalculate timeline duration to match current clips
+      const currentProj = get().project;
+      const derivedDuration = calculateProjectDuration(currentProj.tracks, currentProj.audioClips, 5.0);
+      const clamped = clampPlaybackToDuration(derivedDuration, get().currentTime, get().isPlaying);
+
+      set({
+        assets: assetMap,
+        mouthSets: mouthSetMap,
+        project: currentProj.duration !== derivedDuration ? { ...currentProj, duration: derivedDuration } : currentProj,
+        currentTime: clamped.currentTime,
+        isPlaying: clamped.isPlaying,
+      });
     } catch (e) {
       console.warn('Failed to load initial assets from IndexedDB:', e);
     }
   },
 
-  setCurrentView: (currentView: CurrentScreenView) => set({ currentView }),
+  setCurrentView: (currentView: CurrentScreenView) => {
+    if (currentView === 'projects') {
+      get().saveProject().catch((err) => console.warn('Failed to save project on view exit:', err));
+    }
+    set({ currentView });
+  },
 
   pushHistory: () => {
     const { project, history, historyIndex } = get();
@@ -150,30 +259,42 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     // Limit history stack to 30 snapshots
     if (newHistory.length > 30) newHistory.shift();
     set({ history: newHistory, historyIndex: newHistory.length - 1 });
+    scheduleAutosave();
   },
 
   undo: () => {
-    const { history, historyIndex } = get();
+    const { history, historyIndex, currentTime, isPlaying, project } = get();
     if (historyIndex > 0) {
+      const newHistory = [...history];
+      newHistory[historyIndex] = JSON.parse(JSON.stringify(project)) as EditorProject;
       const newIndex = historyIndex - 1;
-      const target = JSON.parse(JSON.stringify(history[newIndex])) as EditorProject;
-      set({ project: target, historyIndex: newIndex });
+      const target = JSON.parse(JSON.stringify(newHistory[newIndex])) as EditorProject;
+      const duration = calculateProjectDuration(target.tracks, target.audioClips, 5.0);
+      target.duration = duration;
+      const clamped = clampPlaybackToDuration(duration, currentTime, isPlaying);
+      set({ project: target, history: newHistory, historyIndex: newIndex, currentTime: clamped.currentTime, isPlaying: clamped.isPlaying });
     }
   },
 
   redo: () => {
-    const { history, historyIndex } = get();
+    const { history, historyIndex, currentTime, isPlaying } = get();
     if (historyIndex < history.length - 1) {
       const newIndex = historyIndex + 1;
       const target = JSON.parse(JSON.stringify(history[newIndex])) as EditorProject;
-      set({ project: target, historyIndex: newIndex });
+      const duration = calculateProjectDuration(target.tracks, target.audioClips, 5.0);
+      target.duration = duration;
+      const clamped = clampPlaybackToDuration(duration, currentTime, isPlaying);
+      set({ project: target, historyIndex: newIndex, currentTime: clamped.currentTime, isPlaying: clamped.isPlaying });
     }
   },
 
   setProject: (newProj) => {
     get().pushHistory();
+    const tracks = validateTracks(newProj.tracks);
+    const audioClips = Array.isArray(newProj.audioClips) ? newProj.audioClips : [];
+    const duration = calculateProjectDuration(tracks, audioClips, 5.0);
     set({
-      project: { ...newProj, tracks: validateTracks(newProj.tracks) },
+      project: { ...newProj, tracks, audioClips, duration },
       selectedClipId: null,
       selectedClipTrackId: null,
       currentTime: 0,
@@ -184,6 +305,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   newProject: (name = 'New Project', width = 1920, height = 1080, fps = 30) => {
     get().pushHistory();
     audioEngine.stop();
+    clearWaveformCache();
+    audioEngine.clearAudioBuffers();
     const proj = createDefaultProject(name, width, height, fps);
     set({
       project: proj,
@@ -200,7 +323,30 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   saveProject: async () => {
     const { project } = get();
-    await saveProjectToDb(project);
+    set({ isSaving: true });
+    try {
+      await saveProjectToDb(project);
+      await saveSnapshotToDb(project.id, project, true, 'Autosave');
+      set({ isSaving: false, lastSavedAt: Date.now() });
+    } catch (e) {
+      console.warn('Failed to save project:', e);
+      set({ isSaving: false });
+    }
+  },
+
+  createSnapshot: async (name?: string) => {
+    const { project } = get();
+    const snap = await saveSnapshotToDb(project.id, project, false, name);
+    set({ lastSavedAt: Date.now() });
+    return snap.id;
+  },
+
+  restoreSnapshot: async (snapshotId: string) => {
+    const loaded = await restoreSnapshotFromDb(snapshotId);
+    if (!loaded) return false;
+    get().pushHistory();
+    get().setProject(loaded);
+    return true;
   },
 
   renameProject: (name: string) => {
@@ -236,6 +382,28 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }));
   },
 
+  fitTimelineToContent: () => {
+    get().pushHistory();
+    set((state) => {
+      // Prioritize story end (visuals + dialogue), non-destructively preserving audio clips
+      const storyEnd = getStoryEnd(state.project.tracks, state.project.audioClips);
+      const timelineEnd = getTimelineEnd(state.project.tracks, state.project.audioClips);
+      const targetEnd = storyEnd > 0 ? storyEnd : (timelineEnd > 0 ? timelineEnd : 5.0);
+      return {
+        project: { ...state.project, duration: targetEnd, updatedAt: Date.now() },
+      };
+    });
+    get().saveProject().catch(() => {});
+  },
+
+  setAutoFitToStory: (enabled: boolean) => {
+    get().pushHistory();
+    set((state) => ({
+      project: { ...state.project, autoFitToStory: enabled, updatedAt: Date.now() },
+    }));
+    get().saveProject().catch(() => {});
+  },
+
   setCurrentTime: (time: number) => {
     const { project } = get();
     const clamped = Math.max(0, Math.min(project.duration, time));
@@ -253,7 +421,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       audioEngine.resumeContext();
       const startTime = currentTime >= project.duration ? 0 : currentTime;
       set({ isPlaying: true, currentTime: startTime });
-      await audioEngine.play(project.audioClips, assets, startTime);
+      await audioEngine.play(project.audioClips, assets, startTime, project.audioTrackSettings);
     }
   },
 
@@ -270,12 +438,60 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   toggleDiagnosticMode: () => set((state) => ({ diagnosticMode: !state.diagnosticMode })),
 
+  toggleSafeZones: () => set((state) => ({ showSafeZones: !state.showSafeZones })),
+
+  toggleRulers: () => set((state) => ({ showRulers: !state.showRulers })),
+
+  addCanvasGuide: (orientation, position) =>
+    set((state) => ({
+      canvasGuides: [
+        ...state.canvasGuides,
+        {
+          id: `guide_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          orientation,
+          position: Math.round(position),
+        },
+      ],
+    })),
+
+  removeCanvasGuide: (id) =>
+    set((state) => ({
+      canvasGuides: state.canvasGuides.filter((g) => g.id !== id),
+    })),
+
+  clearCanvasGuides: () => set({ canvasGuides: [] }),
+
+  toggleStoryboard: () => set((state) => ({ showStoryboard: !state.showStoryboard })),
+
+  setActiveTool: (activeTool) => set({ activeTool }),
+
+  setInPoint: (inTime) =>
+    set((state) => {
+      const out = state.inOutRange.out;
+      const validIn = inTime !== null ? Math.max(0, Math.min(state.project.duration, inTime)) : null;
+      // If in is after out, reset out
+      const validOut = out !== null && validIn !== null && validIn >= out ? null : out;
+      return { inOutRange: { in: validIn, out: validOut } };
+    }),
+
+  setOutPoint: (outTime) =>
+    set((state) => {
+      const inPt = state.inOutRange.in;
+      const validOut = outTime !== null ? Math.max(0, Math.min(state.project.duration, outTime)) : null;
+      // If out is before in, reset in
+      const validIn = inPt !== null && validOut !== null && validOut <= inPt ? null : inPt;
+      return { inOutRange: { in: validIn, out: validOut } };
+    }),
+
+  clearInOutRange: () => set({ inOutRange: { in: null, out: null } }),
+
   setLipSyncModalOpen: (isLipSyncModalOpen: boolean) => set({ isLipSyncModalOpen }),
 
   setExportModalOpen: (isExportModalOpen: boolean) => set({ isExportModalOpen }),
 
   setProjectModalOpen: (isProjectModalOpen: boolean) => set({ isProjectModalOpen }),
   setPromptModalOpen: (isPromptModalOpen: boolean) => set({ isPromptModalOpen }),
+  setRecordModalOpen: (isRecordModalOpen: boolean) => set({ isRecordModalOpen }),
 
   addAsset: async (asset) => {
     const { project } = get();
@@ -294,6 +510,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   deleteAsset: async (assetId: string) => {
     await deleteAssetFromDb(assetId);
+    clearWaveformCache(assetId);
+    audioEngine.removeAudioBuffer(assetId);
     set((state) => {
       const nextAssets = new Map(state.assets);
       nextAssets.delete(assetId);
@@ -363,12 +581,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         return t;
       });
       const duration = calculateProjectDuration(tracks, state.project.audioClips);
+      const clamped = clampPlaybackToDuration(duration, state.currentTime, state.isPlaying);
       return {
         project: { ...state.project, tracks, duration, updatedAt: Date.now() },
         selectedClipId: clip.id,
         selectedClipTrackId: trackId,
+        currentTime: clamped.currentTime,
+        isPlaying: clamped.isPlaying,
       };
     });
+    get().saveProject().catch((err) => console.warn('Failed to save after adding visual clip:', err));
   },
 
   updateVisualClip: (clipId, updates, recordHistory = false) => {
@@ -379,7 +601,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         clips: track.clips.map((clip) => (clip.id === clipId ? { ...clip, ...updates } : clip)),
       }));
       const duration = calculateProjectDuration(tracks, state.project.audioClips);
-      return { project: { ...state.project, tracks, duration, updatedAt: Date.now() } };
+      const clamped = clampPlaybackToDuration(duration, state.currentTime, state.isPlaying);
+      return {
+        project: { ...state.project, tracks, duration, updatedAt: Date.now() },
+        currentTime: clamped.currentTime,
+        isPlaying: clamped.isPlaying,
+      };
     });
   },
 
@@ -421,11 +648,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       });
 
       const duration = calculateProjectDuration(tracks, state.project.audioClips);
+      const clamped = clampPlaybackToDuration(duration, state.currentTime, state.isPlaying);
 
       return {
         project: { ...state.project, tracks, duration, updatedAt: Date.now() },
         selectedClipId: clipId,
         selectedClipTrackId: destTrackId,
+        currentTime: clamped.currentTime,
+        isPlaying: clamped.isPlaying,
       };
     });
   },
@@ -443,7 +673,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }),
       }));
       const duration = calculateProjectDuration(tracks, state.project.audioClips);
-      return { project: { ...state.project, tracks, duration, updatedAt: Date.now() } };
+      const clamped = clampPlaybackToDuration(duration, state.currentTime, state.isPlaying);
+      return {
+        project: { ...state.project, tracks, duration, updatedAt: Date.now() },
+        currentTime: clamped.currentTime,
+        isPlaying: clamped.isPlaying,
+      };
     });
   },
 
@@ -460,10 +695,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         };
         const audioClips = [...state.project.audioClips, duplicatedAudio];
         const duration = calculateProjectDuration(state.project.tracks, audioClips);
+        const clamped = clampPlaybackToDuration(duration, state.currentTime, state.isPlaying);
         return {
           project: { ...state.project, audioClips, duration, updatedAt: Date.now() },
           selectedClipId: duplicatedAudio.id,
           selectedClipTrackId: 'audio',
+          currentTime: clamped.currentTime,
+          isPlaying: clamped.isPlaying,
         };
       }
 
@@ -493,11 +731,151 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       });
 
       const duration = calculateProjectDuration(tracks, state.project.audioClips);
+      const clamped = clampPlaybackToDuration(duration, state.currentTime, state.isPlaying);
 
       return {
         project: { ...state.project, tracks, duration, updatedAt: Date.now() },
         selectedClipId: duplicated.id,
         selectedClipTrackId: targetTrackId,
+        currentTime: clamped.currentTime,
+        isPlaying: clamped.isPlaying,
+      };
+    });
+  },
+
+  splitClip: (clipId, splitTime) => {
+    const at = splitTime !== undefined ? splitTime : get().currentTime;
+    get().pushHistory();
+
+    set((state) => {
+      // Check audio clips first
+      const audioIndex = state.project.audioClips.findIndex((c) => c.id === clipId);
+      if (audioIndex !== -1) {
+        const clip = state.project.audioClips[audioIndex];
+        const clipEnd = clip.start + clip.duration;
+        // Require at least 0.1s margin on both pieces
+        if (at <= clip.start + 0.1 || at >= clipEnd - 0.1) return state;
+
+        const firstDuration = Number((at - clip.start).toFixed(4));
+        const secondDuration = Number((clipEnd - at).toFixed(4));
+        const firstPiece: AudioClip = {
+          ...clip,
+          duration: firstDuration,
+          trimEnd: Number(((clip.trimStart || 0) + firstDuration).toFixed(4)),
+          fadeOut: 0,
+        };
+        const secondPiece: AudioClip = {
+          ...clip,
+          id: `aclip_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          start: Number(at.toFixed(4)),
+          duration: secondDuration,
+          trimStart: Number(((clip.trimStart || 0) + firstDuration).toFixed(4)),
+          trimEnd: Number(((clip.trimStart || 0) + firstDuration + secondDuration).toFixed(4)),
+          fadeIn: 0,
+        };
+
+        const audioClips = [
+          ...state.project.audioClips.slice(0, audioIndex),
+          firstPiece,
+          secondPiece,
+          ...state.project.audioClips.slice(audioIndex + 1),
+        ];
+
+        const duration = calculateProjectDuration(state.project.tracks, audioClips);
+        const clamped = clampPlaybackToDuration(duration, state.currentTime, state.isPlaying);
+
+        return {
+          project: { ...state.project, audioClips, duration, updatedAt: Date.now() },
+          selectedClipId: secondPiece.id,
+          selectedClipTrackId: 'audio',
+          currentTime: clamped.currentTime,
+          isPlaying: clamped.isPlaying,
+        };
+      }
+
+      // Check visual clips
+      let targetTrackId: TrackId | null = null;
+      let targetClipIndex = -1;
+      let originalClip: VisualClip | null = null;
+
+      for (const track of state.project.tracks) {
+        const idx = track.clips.findIndex((c) => c.id === clipId);
+        if (idx !== -1) {
+          targetTrackId = track.id;
+          targetClipIndex = idx;
+          originalClip = track.clips[idx];
+          break;
+        }
+      }
+
+      if (!originalClip || !targetTrackId || targetClipIndex === -1) return state;
+
+      const clipEnd = originalClip.start + originalClip.duration;
+      if (at <= originalClip.start + 0.1 || at >= clipEnd - 0.1) return state;
+
+      const firstDuration = Number((at - originalClip.start).toFixed(4));
+      const secondDuration = Number((clipEnd - at).toFixed(4));
+      const localSplit = firstDuration;
+
+      // Handle lip-sync cues if present (cues are in local seconds relative to clip.start)
+      let firstCues = originalClip.lipSyncData?.cues;
+      let secondCues = originalClip.lipSyncData?.cues;
+      if (originalClip.lipSyncData?.cues) {
+        firstCues = originalClip.lipSyncData.cues
+          .filter((c) => c.start < localSplit)
+          .map((c) => ({
+            ...c,
+            end: Number(Math.min(localSplit, c.end).toFixed(4)),
+          }))
+          .filter((c) => c.end > c.start);
+
+        secondCues = originalClip.lipSyncData.cues
+          .filter((c) => c.end > localSplit)
+          .map((c) => ({
+            ...c,
+            id: `cue_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            start: Number(Math.max(0, c.start - localSplit).toFixed(4)),
+            end: Number(Math.min(secondDuration, c.end - localSplit).toFixed(4)),
+          }))
+          .filter((c) => c.end > c.start);
+      }
+
+      const firstPiece: VisualClip = {
+        ...originalClip,
+        duration: firstDuration,
+        lipSyncData: originalClip.lipSyncData
+          ? { ...originalClip.lipSyncData, cues: firstCues || [] }
+          : undefined,
+      };
+
+      const secondPiece: VisualClip = {
+        ...originalClip,
+        id: `clip_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        start: Number(at.toFixed(4)),
+        duration: secondDuration,
+        lipSyncData: originalClip.lipSyncData
+          ? { ...originalClip.lipSyncData, cues: secondCues || [] }
+          : undefined,
+      };
+
+      const tracks = state.project.tracks.map((track) => {
+        if (track.id === targetTrackId) {
+          const newClips = [...track.clips];
+          newClips.splice(targetClipIndex, 1, firstPiece, secondPiece);
+          return { ...track, clips: newClips };
+        }
+        return track;
+      });
+
+      const duration = calculateProjectDuration(tracks, state.project.audioClips);
+      const clamped = clampPlaybackToDuration(duration, state.currentTime, state.isPlaying);
+
+      return {
+        project: { ...state.project, tracks, duration, updatedAt: Date.now() },
+        selectedClipId: secondPiece.id,
+        selectedClipTrackId: targetTrackId,
+        currentTime: clamped.currentTime,
+        isPlaying: clamped.isPlaying,
       };
     });
   },
@@ -510,11 +888,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         clips: track.clips.filter((c) => c.id !== clipId),
       }));
       const audioClips = state.project.audioClips.filter((c) => c.id !== clipId);
-      const duration = calculateProjectDuration(tracks, audioClips);
+      const duration = calculateProjectDuration(tracks, audioClips, 5.0);
+      const clamped = clampPlaybackToDuration(duration, state.currentTime, state.isPlaying);
       return {
         project: { ...state.project, tracks, audioClips, duration, updatedAt: Date.now() },
         selectedClipId: state.selectedClipId === clipId ? null : state.selectedClipId,
         selectedClipTrackId: state.selectedClipId === clipId ? null : state.selectedClipTrackId,
+        currentTime: clamped.currentTime,
+        isPlaying: clamped.isPlaying,
       };
     });
   },
@@ -586,15 +967,24 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     get().updateVisualClip(clipId, { x, y, width, height, rotation: 0 }, false);
   },
 
-  addAudioClip: (clip) => {
+  addAudioClip: (clip, trackId) => {
     get().pushHistory();
     set((state) => {
-      const audioClips = [...state.project.audioClips, clip];
+      const assignedTrack = trackId || clip.trackId || 'A1';
+      const audioClips = [...state.project.audioClips, { ...clip, trackId: assignedTrack }];
       const duration = calculateProjectDuration(state.project.tracks, audioClips);
+      const clamped = clampPlaybackToDuration(duration, state.currentTime, state.isPlaying);
+      if (state.isPlaying && clamped.isPlaying) {
+        audioEngine.stop();
+        audioEngine.play(audioClips, get().assets, clamped.currentTime, state.project.audioTrackSettings);
+      }
       return {
         project: { ...state.project, audioClips, duration, updatedAt: Date.now() },
+        currentTime: clamped.currentTime,
+        isPlaying: clamped.isPlaying,
       };
     });
+    get().saveProject().catch((err) => console.warn('Failed to save after adding audio clip:', err));
   },
 
   updateAudioClip: (clipId, updates, recordHistory = true) => {
@@ -602,11 +992,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) => {
       const audioClips = state.project.audioClips.map((c) => (c.id === clipId ? { ...c, ...updates } : c));
       const duration = calculateProjectDuration(state.project.tracks, audioClips);
-      return { project: { ...state.project, audioClips, duration, updatedAt: Date.now() } };
+      const clamped = clampPlaybackToDuration(duration, state.currentTime, state.isPlaying);
+      if (state.isPlaying && clamped.isPlaying) {
+        audioEngine.stop();
+        audioEngine.play(audioClips, get().assets, clamped.currentTime, state.project.audioTrackSettings);
+      }
+      return {
+        project: { ...state.project, audioClips, duration, updatedAt: Date.now() },
+        currentTime: clamped.currentTime,
+        isPlaying: clamped.isPlaying,
+      };
     });
   },
 
-  moveAudioClip: (clipId, newStart, recordHistory = false) => {
+  moveAudioClip: (clipId, newStart, targetTrackId, recordHistory = false) => {
     if (recordHistory) get().pushHistory();
     const { project } = get();
     const snapTargets = getSnapTargets(project.tracks, project.audioClips, clipId);
@@ -630,12 +1029,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }
 
       const updatedStart = Number(clampedStart.toFixed(4));
+      const destTrack = targetTrackId || clip.trackId || 'A1';
       const audioClips = state.project.audioClips.map((c) =>
-        c.id === clipId ? { ...c, start: updatedStart } : c
+        c.id === clipId ? { ...c, start: updatedStart, trackId: destTrack } : c
       );
       const duration = calculateProjectDuration(state.project.tracks, audioClips);
+      const clamped = clampPlaybackToDuration(duration, state.currentTime, state.isPlaying);
+      if (state.isPlaying && clamped.isPlaying) {
+        audioEngine.stop();
+        audioEngine.play(audioClips, get().assets, clamped.currentTime, state.project.audioTrackSettings);
+      }
       return {
         project: { ...state.project, audioClips, duration, updatedAt: Date.now() },
+        currentTime: clamped.currentTime,
+        isPlaying: clamped.isPlaying,
       };
     });
   },
@@ -672,8 +1079,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
       const audioClips = state.project.audioClips.map((c) => (c.id === clipId ? updated : c));
       const duration = calculateProjectDuration(state.project.tracks, audioClips);
+      const clamped = clampPlaybackToDuration(duration, state.currentTime, state.isPlaying);
+      if (state.isPlaying && clamped.isPlaying) {
+        audioEngine.stop();
+        audioEngine.play(audioClips, get().assets, clamped.currentTime, state.project.audioTrackSettings);
+      }
       return {
         project: { ...state.project, audioClips, duration, updatedAt: Date.now() },
+        currentTime: clamped.currentTime,
+        isPlaying: clamped.isPlaying,
       };
     });
   },
@@ -682,11 +1096,91 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     get().pushHistory();
     set((state) => {
       const audioClips = state.project.audioClips.filter((c) => c.id !== clipId);
-      const duration = calculateProjectDuration(state.project.tracks, audioClips);
+      const duration = calculateProjectDuration(state.project.tracks, audioClips, 5.0);
+      const clamped = clampPlaybackToDuration(duration, state.currentTime, state.isPlaying);
+      if (state.isPlaying && clamped.isPlaying) {
+        audioEngine.stop();
+        audioEngine.play(audioClips, get().assets, clamped.currentTime, state.project.audioTrackSettings);
+      }
       return {
         project: { ...state.project, audioClips, duration, updatedAt: Date.now() },
         selectedClipId: state.selectedClipId === clipId ? null : state.selectedClipId,
         selectedClipTrackId: state.selectedClipId === clipId ? null : state.selectedClipTrackId,
+        currentTime: clamped.currentTime,
+        isPlaying: clamped.isPlaying,
+      };
+    });
+  },
+
+  setAudioTrackSettings: (trackId, settings) => {
+    get().pushHistory();
+    set((state) => {
+      const current = state.project.audioTrackSettings || {
+        A1: { volume: 1.0, muted: false, solo: false },
+        A2: { volume: 0.8, muted: false, solo: false },
+      };
+      const updatedTrack = {
+        ...(current[trackId] || { volume: 1.0, muted: false, solo: false }),
+        ...settings,
+      };
+      const audioTrackSettings = {
+        ...current,
+        [trackId]: updatedTrack,
+      };
+      return {
+        project: { ...state.project, audioTrackSettings, updatedAt: Date.now() },
+      };
+    });
+  },
+
+  addKeyframe: (clipId, timeOrKeyframe, properties = {}) => {
+    get().pushHistory();
+    const time = typeof timeOrKeyframe === 'number' ? timeOrKeyframe : timeOrKeyframe.time;
+    const props = typeof timeOrKeyframe === 'number' ? properties : { ...timeOrKeyframe, ...properties };
+    set((state) => {
+      const tracks = state.project.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((c) => {
+          if (c.id !== clipId) return c;
+          const kfs = setKeyframe(c.keyframes || [], time, props);
+          return { ...c, keyframes: kfs };
+        }),
+      }));
+      return {
+        project: { ...state.project, tracks, updatedAt: Date.now() },
+      };
+    });
+  },
+
+  removeKeyframe: (clipId, keyframeId) => {
+    get().pushHistory();
+    set((state) => {
+      const tracks = state.project.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((c) => {
+          if (c.id !== clipId) return c;
+          const kfs = deleteKeyframe(c.keyframes || [], keyframeId);
+          return { ...c, keyframes: kfs };
+        }),
+      }));
+      return {
+        project: { ...state.project, tracks, updatedAt: Date.now() },
+      };
+    });
+  },
+
+  updateKeyframe: (clipId, keyframeId, updates) => {
+    set((state) => {
+      const tracks = state.project.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((c) => {
+          if (c.id !== clipId || !c.keyframes) return c;
+          const kfs = c.keyframes.map((k) => (k.id === keyframeId ? { ...k, ...updates } : k));
+          return { ...c, keyframes: kfs.sort((a, b) => a.time - b.time) };
+        }),
+      }));
+      return {
+        project: { ...state.project, tracks, updatedAt: Date.now() },
       };
     });
   },

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useEditorStore } from '../../state/editorStore';
-import { TrackId } from '../../types/timeline';
+import { TrackId, AudioTrackId, TransformKeyframe } from '../../types/timeline';
 import {
   Sliders,
   Move,
@@ -18,12 +18,16 @@ import {
   Volume2,
   Trash2,
   Copy,
+  Diamond,
+  Plus,
 } from 'lucide-react';
 import { ASPECT_RATIO_PRESETS, AspectRatioPreset, getProjectAspectRatio } from '../../types/project';
 
 export const PropertiesPanel: React.FC = () => {
   const {
     project,
+    currentTime,
+    setCurrentTime,
     selectedClipId,
     selectedClipTrackId,
     updateVisualClip,
@@ -31,6 +35,8 @@ export const PropertiesPanel: React.FC = () => {
     setAspectRatioPreset,
     setProjectDimensions,
     setProjectDuration,
+    fitTimelineToContent,
+    setAutoFitToStory,
     renameProject,
     fitClipToScreen,
     centerClipOnScreen,
@@ -38,6 +44,9 @@ export const PropertiesPanel: React.FC = () => {
     updateAudioClip,
     duplicateClip,
     removeClip,
+    addKeyframe,
+    removeKeyframe,
+    updateKeyframe,
     assets,
     mouthSets,
   } = useEditorStore();
@@ -77,7 +86,7 @@ export const PropertiesPanel: React.FC = () => {
             <span className="font-semibold text-editor-text">Audio Clip</span>
           </div>
           <span className="font-mono text-[10px] text-amber-300 bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-500/30 font-medium">
-            A1
+            {selectedAudio.trackId || 'A1'}
           </span>
         </div>
 
@@ -87,6 +96,19 @@ export const PropertiesPanel: React.FC = () => {
           <div className="p-2 rounded-editor-md bg-editor-surface border border-editor-border text-editor-text text-xs truncate font-mono">
             {audioAsset?.name || selectedAudio.id}
           </div>
+        </div>
+
+        {/* Audio Track Selector */}
+        <div>
+          <label className="text-[10px] text-editor-muted block mb-1">Audio Track</label>
+          <select
+            value={selectedAudio.trackId || 'A1'}
+            onChange={(e) => updateAudioClip(selectedAudio.id, { trackId: e.target.value as AudioTrackId })}
+            className="w-full bg-editor-surface border border-editor-border rounded-editor-sm px-2 py-1 text-editor-text text-xs focus:outline-none focus:border-editor-accent font-mono cursor-pointer"
+          >
+            <option value="A1">A1 — Voice / Dialogue</option>
+            <option value="A2">A2 — SFX / Music</option>
+          </select>
         </div>
 
         {/* Timing Controls */}
@@ -160,6 +182,43 @@ export const PropertiesPanel: React.FC = () => {
             onChange={(e) => updateAudioClip(selectedAudio.id, { volume: parseFloat(e.target.value) })}
             className="w-full"
           />
+        </div>
+
+        {/* Audio Fade Envelopes (Feature 09) */}
+        <div className="space-y-2 pt-1 border-t border-editor-border/60">
+          <span className="text-[11px] text-editor-secondary font-medium block">Audio Fades (Feature 09)</span>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] text-editor-muted block mb-1">Fade In (s)</label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                max={Number((selectedAudio.duration / 2).toFixed(2))}
+                value={selectedAudio.fadeIn || 0}
+                onChange={(e) => {
+                  const val = Math.max(0, Math.min(selectedAudio.duration / 2, parseFloat(e.target.value) || 0));
+                  updateAudioClip(selectedAudio.id, { fadeIn: val });
+                }}
+                className="w-full bg-editor-surface border border-editor-border rounded-editor-sm px-2 py-1 text-editor-text text-xs focus:outline-none focus:border-editor-accent font-mono"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-editor-muted block mb-1">Fade Out (s)</label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                max={Number((selectedAudio.duration / 2).toFixed(2))}
+                value={selectedAudio.fadeOut || 0}
+                onChange={(e) => {
+                  const val = Math.max(0, Math.min(selectedAudio.duration / 2, parseFloat(e.target.value) || 0));
+                  updateAudioClip(selectedAudio.id, { fadeOut: val });
+                }}
+                className="w-full bg-editor-surface border border-editor-border rounded-editor-sm px-2 py-1 text-editor-text text-xs focus:outline-none focus:border-editor-accent font-mono"
+              />
+            </div>
+          </div>
         </div>
 
         {/* Actions: Duplicate & Delete */}
@@ -258,20 +317,9 @@ export const PropertiesPanel: React.FC = () => {
         </div>
 
         {/* Timeline Duration */}
-        <div>
-          <div className="flex justify-between text-[11px] text-editor-secondary mb-1">
-            <span className="font-medium">Project Duration</span>
-            <span className="font-mono text-editor-text font-medium">{project.duration.toFixed(1)}s</span>
-          </div>
-          <input
-            type="number"
-            min="1"
-            max="300"
-            step="1"
-            value={project.duration}
-            onChange={(e) => setProjectDuration(parseFloat(e.target.value) || 10)}
-            className="w-full bg-editor-surface border border-editor-border rounded-editor-sm px-2.5 py-1 text-editor-text font-mono text-[11px] focus:outline-none focus:border-editor-accent"
-          />
+        <div className="flex justify-between items-center text-[11px] text-editor-secondary">
+          <span className="font-medium">Timeline Duration</span>
+          <span className="font-mono text-editor-text font-medium">{project.duration.toFixed(1)}s</span>
         </div>
 
         {/* Framerate & Tracks info */}
@@ -460,7 +508,114 @@ export const PropertiesPanel: React.FC = () => {
                 </span>
               </div>
             </div>
+
+            {/* Procedural Idle Motion (Feature 03) */}
+            <div className="flex items-center justify-between pt-2 border-t border-editor-border/40">
+              <div>
+                <span className="text-[11px] text-editor-secondary font-medium block">Idle Motion</span>
+                <span className="text-[10px] text-editor-muted">Breathing & subtle sway</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => updateVisualClip(selectedClip!.id, { idleMotion: !selectedClip.idleMotion })}
+                className={`px-2.5 py-1 rounded text-[11px] font-medium transition-colors border ${
+                  selectedClip.idleMotion
+                    ? 'bg-violet-600 text-white border-violet-500 shadow-glow-accent'
+                    : 'bg-editor-surface hover:bg-editor-subpanel text-editor-muted border-editor-border'
+                }`}
+              >
+                {selectedClip.idleMotion ? 'Enabled' : 'Disabled'}
+              </button>
+            </div>
           </div>
+        </div>
+
+        {/* Keyframe Animation Section (Feature 11) */}
+        <div className="space-y-2 pt-1 border-t border-editor-border/60">
+          <div className="flex items-center justify-between">
+            <label className="text-editor-secondary font-medium flex items-center space-x-1.5">
+              <Diamond className="w-3.5 h-3.5 text-amber-400" />
+              <span>Keyframes ({selectedClip.keyframes?.length || 0})</span>
+            </label>
+            <button
+              type="button"
+              disabled={currentTime < selectedClip.start || currentTime > selectedClip.start + selectedClip.duration}
+              onClick={() => {
+                const relTime = Number(
+                  Math.max(0, Math.min(selectedClip!.duration, currentTime - selectedClip!.start)).toFixed(2)
+                );
+                addKeyframe(selectedClip!.id, relTime, {
+                  x: selectedClip!.x,
+                  y: selectedClip!.y,
+                  width: selectedClip!.width,
+                  height: selectedClip!.height,
+                  rotation: selectedClip!.rotation,
+                  opacity: selectedClip!.opacity ?? 1,
+                  easing: 'ease-in-out',
+                });
+              }}
+              title={
+                currentTime < selectedClip.start || currentTime > selectedClip.start + selectedClip.duration
+                  ? 'Move playhead inside clip to add keyframe'
+                  : 'Add Keyframe at Current Playhead'
+              }
+              className="px-2 py-0.5 rounded-editor-sm bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-400 disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-1 text-[10px] font-medium transition-colors"
+            >
+              <Plus className="w-3 h-3" />
+              <span>Keyframe</span>
+            </button>
+          </div>
+
+          {selectedClip.keyframes && selectedClip.keyframes.length > 0 ? (
+            <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+              {[...selectedClip.keyframes]
+                .sort((a, b) => a.time - b.time)
+                .map((kf) => (
+                  <div
+                    key={kf.id}
+                    className="p-1.5 rounded-editor-sm bg-editor-surface/80 border border-editor-border/60 flex items-center justify-between text-[11px]"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setCurrentTime(selectedClip!.start + kf.time)}
+                      title="Seek playhead to keyframe"
+                      className="flex items-center space-x-1.5 text-editor-text hover:text-amber-400 font-mono transition-colors"
+                    >
+                      <Diamond className="w-2.5 h-2.5 text-amber-400 fill-amber-400 shrink-0" />
+                      <span>+{kf.time.toFixed(2)}s</span>
+                    </button>
+
+                    <div className="flex items-center space-x-1.5">
+                      <select
+                        value={kf.easing || 'linear'}
+                        onChange={(e) =>
+                          updateKeyframe(selectedClip!.id, kf.id, {
+                            easing: e.target.value as 'linear' | 'ease-in-out',
+                          })
+                        }
+                        className="bg-editor-panel border border-editor-border text-[10px] rounded px-1 py-0.5 text-editor-secondary font-mono cursor-pointer"
+                      >
+                        <option value="linear">Linear</option>
+                        <option value="ease-in-out">Ease</option>
+                      </select>
+
+                      <button
+                        type="button"
+                        onClick={() => removeKeyframe(selectedClip!.id, kf.id)}
+                        title="Delete Keyframe"
+                        className="p-1 rounded text-editor-muted hover:text-editor-danger hover:bg-editor-danger/10 transition-colors"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <div className="text-[10px] text-editor-muted py-0.5">
+              No keyframes set. Click "+ Keyframe" to animate position, scale, or rotation over time.
+            </div>
+          )}
         </div>
 
         {/* Timing & Track Assignment */}

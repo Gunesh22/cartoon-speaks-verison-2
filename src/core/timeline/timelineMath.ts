@@ -198,38 +198,127 @@ export function getActiveVisualClipsInRenderOrder(tracks: Track[], time: number)
 }
 
 /**
+ * Calculates the exact end timestamp of the story (last visual or dialogue/A1 endpoint).
+ * If no visual or dialogue clips exist, falls back to the longest remaining audio clip (e.g. A2 BGM).
+ * If no clips exist at all, returns 0.
+ */
+export function getStoryEnd(
+  tracks: Track[],
+  audioClips: AudioClip[]
+): number {
+  let storyEnd = 0;
+
+  // 1. Visual clips
+  for (const track of tracks) {
+    for (const clip of track.clips) {
+      const end = clip.start + clip.duration;
+      if (end > storyEnd) {
+        storyEnd = end;
+      }
+    }
+  }
+
+  // 2. Dialogue / Voice clips (A1 or voice-assigned clips)
+  for (const aClip of audioClips) {
+    const isDialogue = !aClip.trackId || aClip.trackId === 'A1';
+    if (isDialogue) {
+      const end = aClip.start + aClip.duration;
+      if (end > storyEnd) {
+        storyEnd = end;
+      }
+    }
+  }
+
+  // 3. Fallback: If no visual clips and no dialogue clips exist, use longest remaining audio clip
+  if (storyEnd <= 0) {
+    for (const aClip of audioClips) {
+      const end = aClip.start + aClip.duration;
+      if (end > storyEnd) {
+        storyEnd = end;
+      }
+    }
+  }
+
+  return Number(storyEnd.toFixed(3));
+}
+
+/**
+ * Calculates the total timeline boundary (includes every clip, including BGM on A2).
+ */
+export const getTimelineEnd = getTimelineContentEndTime;
+
+/**
+ * Calculates the exact end timestamp of the latest valid clip across all visual and audio tracks.
+ * Returns 0 if there are no clips on the timeline.
+ * Safely ignores invalid or non-finite clip values.
+ */
+export function getTimelineContentEndTime(
+  tracks: Track[],
+  audioClips: AudioClip[]
+): number {
+  let maxEndTime = 0;
+
+  if (Array.isArray(tracks)) {
+    for (const track of tracks) {
+      if (!track || !Array.isArray(track.clips)) continue;
+      for (const clip of track.clips) {
+        if (!clip || typeof clip.start !== 'number' || typeof clip.duration !== 'number') continue;
+        if (!isFinite(clip.start) || !isFinite(clip.duration) || clip.duration <= 0) continue;
+        const end = clip.start + clip.duration;
+        if (isFinite(end) && end > maxEndTime) {
+          maxEndTime = end;
+        }
+      }
+    }
+  }
+
+  if (Array.isArray(audioClips)) {
+    for (const aClip of audioClips) {
+      if (!aClip || typeof aClip.start !== 'number' || typeof aClip.duration !== 'number') continue;
+      if (!isFinite(aClip.start) || !isFinite(aClip.duration) || aClip.duration <= 0) continue;
+      const end = aClip.start + aClip.duration;
+      if (isFinite(end) && end > maxEndTime) {
+        maxEndTime = end;
+      }
+    }
+  }
+
+  return Number(maxEndTime.toFixed(3));
+}
+
+/**
+ * Resolves the effective animation/playback/export end:
+ * Returns the exact latest clip endpoint across all visual and audio tracks.
+ * If no clips exist, falls back to the project duration base.
+ */
+export function getEffectiveAnimationDuration(
+  projectDuration: number,
+  tracks: Track[],
+  audioClips: AudioClip[],
+  _legacyAutoFit?: boolean
+): number {
+  const maxEndTime = getTimelineContentEndTime(tracks, audioClips);
+  return maxEndTime > 0 ? maxEndTime : Math.max(1.0, projectDuration);
+}
+
+/**
  * Automatically calculates the project duration to fit all clips across visual tracks
- * and the audio lane, with a small editing margin and minimum base.
+ * and the audio lane, with zero artificial padding.
+ * Whichever asset ends at last across all tracks, finishes the timeline there.
+ * If no clips exist, returns minBaseDuration (5.0s default).
  */
 export function calculateProjectDuration(
   tracks: Track[],
   audioClips: AudioClip[],
   minBaseDuration: number = 5.0
 ): number {
-  let maxEndTime = 0;
-
-  for (const track of tracks) {
-    for (const clip of track.clips) {
-      const end = clip.start + clip.duration;
-      if (end > maxEndTime) {
-        maxEndTime = end;
-      }
-    }
-  }
-
-  for (const aClip of audioClips) {
-    const end = aClip.start + aClip.duration;
-    if (end > maxEndTime) {
-      maxEndTime = end;
-    }
-  }
+  const maxEndTime = getTimelineContentEndTime(tracks, audioClips);
 
   if (maxEndTime <= 0) {
-    return minBaseDuration;
+    return Math.max(1.0, minBaseDuration);
   }
 
-  // Adjust duration to exactly fit clips with a small 0.5s editing margin
-  return Number(Math.max(minBaseDuration, maxEndTime + 0.5).toFixed(1));
+  return maxEndTime;
 }
 
 /**

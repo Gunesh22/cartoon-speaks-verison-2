@@ -64,6 +64,23 @@ export const LipSyncModal: React.FC = () => {
   const [showTuningPopover, setShowTuningPopover] = useState<boolean>(false);
   const [shapeTunings, setShapeTunings] = useState<Record<string, ShapeTuning>>({});
 
+  // Collapsible Tuning Sections (Sections: Position, Anchor, Scale & Rotation, Timing & Speech Sync)
+  const [expandedSections, setExpandedSections] = useState<{
+    position: boolean;
+    anchor: boolean;
+    scaleAlign: boolean;
+    timing: boolean;
+  }>({
+    position: true,
+    anchor: false,
+    scaleAlign: true,
+    timing: false,
+  });
+
+  const toggleSection = (key: keyof typeof expandedSections) => {
+    setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
   // Extracted Sprites and Cues
   const [extractedMouthSet, setExtractedMouthSet] = useState<MouthSetAsset | null>(null);
   const [generatedCues, setGeneratedCues] = useState<MouthCue[]>([]);
@@ -710,6 +727,10 @@ export const LipSyncModal: React.FC = () => {
       setErrorMessage('Please select or upload a mouth sprite sheet');
       return;
     }
+    if (selectedCharId === selectedSheetId) {
+      setErrorMessage('Character artwork and Mouth Sprite Sheet cannot be the same image. Please select a separate mouth sprite sheet.');
+      return;
+    }
     if (!selectedAudioAsset) {
       setErrorMessage('Please select or upload an audio file');
       return;
@@ -747,7 +768,7 @@ export const LipSyncModal: React.FC = () => {
     }
   };
 
-  const handleAddToTimeline = () => {
+  const handleAddToTimeline = async () => {
     if (!selectedCharAsset || !extractedMouthSet || !selectedAudioAsset) return;
 
     const cachedCharImg = imageCacheRef.current.get(selectedCharAsset.url);
@@ -761,6 +782,12 @@ export const LipSyncModal: React.FC = () => {
       project.height,
       'contain'
     );
+
+    const finalMouthSet: MouthSetAsset = {
+      ...extractedMouthSet,
+      projectId: project.id,
+    };
+    await addMouthSet(finalMouthSet);
 
     // 1. Add Visual Lip-Sync Clip
     addVisualClip('V2', {
@@ -779,21 +806,21 @@ export const LipSyncModal: React.FC = () => {
       lipSyncData: {
         characterAssetId: selectedCharAsset.id,
         audioAssetId: selectedAudioAsset.id,
-        mouthSetId: extractedMouthSet.id,
+        mouthSetId: finalMouthSet.id,
         cues: generatedCues,
         mouthAnchor: charMouthAnchor,
         spriteAnchor: mouthSpriteAnchor,
         mouthScale,
         mouthRotation,
-        referenceCellWidth: extractedMouthSet.referenceCellWidth,
-        referenceCellHeight: extractedMouthSet.referenceCellHeight,
+        referenceCellWidth: finalMouthSet.referenceCellWidth,
+        referenceCellHeight: finalMouthSet.referenceCellHeight,
         sizingMode: cropMode === 'cell' ? 'uniform' : 'proportional',
         tuning,
         shapeTunings,
       },
     });
 
-    // 2. Add Audio Clip into Audio Track
+    // 2. Add Audio Clip into Audio Track (A1)
     addAudioClip({
       id: `aclip_${Date.now()}`,
       assetId: selectedAudioAsset.id,
@@ -802,7 +829,11 @@ export const LipSyncModal: React.FC = () => {
       volume: 1.0,
       trimStart: 0,
       trimEnd: lipSyncDuration,
+      trackId: 'A1',
     });
+
+    // 3. Immediately persist project to IndexedDB so changes are never lost
+    await useEditorStore.getState().saveProject();
 
     setLipSyncModalOpen(false);
   };
@@ -836,7 +867,7 @@ export const LipSyncModal: React.FC = () => {
         {/* Modal Body: Left Inputs & Right Canvas */}
         <div className="flex-1 flex overflow-hidden min-h-0">
           {/* Left Column: Form & Inputs */}
-          <div className="w-[360px] bg-editor-panel border-r border-editor-border p-3.5 overflow-y-auto space-y-3.5 shrink-0">
+          <div className="w-[380px] bg-editor-panel border-r border-editor-border p-3.5 overflow-y-auto space-y-3.5 shrink-0">
             {errorMessage && (
               <div className="p-2.5 rounded-editor-md bg-editor-danger/10 border border-editor-danger/30 text-editor-danger flex items-start space-x-2">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -906,8 +937,10 @@ export const LipSyncModal: React.FC = () => {
                   className="flex-1 bg-editor-surface border border-editor-border rounded-editor-sm px-2.5 py-1.5 text-editor-text focus:outline-none focus:border-editor-accent cursor-pointer"
                 >
                   <option value="">Select Mouth Sprite Sheet...</option>
-                  {imageAssets.map((a) => (
-                    <option key={a.id} value={a.id} className="bg-editor-elevated">{a.name}</option>
+                  {imageAssets
+                    .filter((a) => !selectedCharId || a.id !== selectedCharId)
+                    .map((a) => (
+                      <option key={a.id} value={a.id} className="bg-editor-elevated">{a.name}</option>
                   ))}
                 </select>
                 <input
@@ -1031,281 +1064,359 @@ export const LipSyncModal: React.FC = () => {
               />
             </div>
 
-            {/* Action Row: Generate & Tuning */}
-            <div className="space-y-2 pt-1">
-              <div className="flex space-x-2">
-                <button
-                  onClick={handleGenerate}
-                  disabled={isProcessing || !selectedCharId || !selectedSheetId || !selectedAudioId}
-                  className="flex-1 py-2 rounded-editor-md bg-editor-accentAction hover:bg-editor-accent disabled:opacity-35 text-white font-semibold flex items-center justify-center space-x-2 shadow-sm transition-all"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>{isProcessing ? 'Synchronizing Speech...' : 'Generate Lip Sync'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowTuningPopover(!showTuningPopover)}
-                  className={`px-3 py-2 rounded-editor-md border font-medium flex items-center space-x-1.5 transition-colors ${
-                    showTuningPopover
-                      ? 'bg-editor-accent text-white border-editor-accent'
-                      : 'bg-editor-subpanel text-editor-secondary border-editor-border hover:bg-editor-hover'
-                  }`}
-                  title="Speech speed, smoothness, and min duration tuning"
-                >
-                  <SlidersHorizontal className="w-3.5 h-3.5" />
-                  <span>Tuning</span>
-                  {showTuningPopover ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                </button>
-              </div>
-
-              {/* Lip-Sync Tuning Drawer */}
-              {showTuningPopover && (
-                <div className="p-3 bg-editor-surface border border-editor-accent/40 rounded-editor-md space-y-2.5 animate-in fade-in duration-100">
-                  <div className="flex items-center justify-between text-xs font-semibold text-editor-accent border-b border-editor-border pb-1">
-                    <span className="flex items-center space-x-1">
-                      <Sliders className="w-3.5 h-3.5" />
-                      <span>Audio Sync Tuning</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setTuning(DEFAULT_LIPSYNC_TUNING)}
-                      className="text-[10px] text-editor-muted hover:text-editor-text underline font-normal"
-                    >
-                      Reset Defaults
-                    </button>
-                  </div>
-
-                  {/* Speed */}
-                  <div>
-                    <div className="flex justify-between text-[11px] text-editor-secondary mb-1">
-                      <span>Timing Speed</span>
-                      <span className="capitalize text-editor-text font-medium">{tuning.speed}</span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-1 bg-editor-subpanel p-0.5 rounded-editor-sm border border-editor-border">
-                      {(['slower', 'natural', 'faster'] as const).map((spd) => (
-                        <button
-                          key={spd}
-                          type="button"
-                          onClick={() => setTuning((prev) => ({ ...prev, speed: spd }))}
-                          className={`py-1 text-center text-[10px] font-semibold rounded capitalize transition-all ${
-                            tuning.speed === spd
-                              ? 'bg-editor-accentAction text-white'
-                              : 'text-editor-muted hover:text-editor-text'
-                          }`}
-                        >
-                          {spd}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Smoothness */}
-                  <div>
-                    <div className="flex justify-between text-[11px] text-editor-secondary mb-1">
-                      <span>Transition Smoothness</span>
-                      <span className="text-editor-text font-medium">
-                        {tuning.smoothness === 'low' ? 'Crisp' : tuning.smoothness === 'high' ? 'Smooth' : 'Natural'}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-1 bg-editor-subpanel p-0.5 rounded-editor-sm border border-editor-border">
-                      {[
-                        { id: 'low', label: 'Crisp' },
-                        { id: 'medium', label: 'Natural' },
-                        { id: 'high', label: 'Smooth' },
-                      ].map((sm) => (
-                        <button
-                          key={sm.id}
-                          type="button"
-                          onClick={() => setTuning((prev) => ({ ...prev, smoothness: sm.id as any }))}
-                          className={`py-1 text-center text-[10px] font-semibold rounded transition-all ${
-                            tuning.smoothness === sm.id
-                              ? 'bg-editor-accentAction text-white'
-                              : 'text-editor-muted hover:text-editor-text'
-                          }`}
-                        >
-                          {sm.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Min Cue Duration */}
-                  <div>
-                    <div className="flex justify-between items-center text-[11px] text-editor-secondary mb-0.5">
-                      <span>Min Cue Duration</span>
-                      <span className="font-mono text-editor-accent font-semibold bg-editor-subpanel px-1.5 py-0.5 rounded border border-editor-border text-[10px]">
-                        {tuning.minDurationMs}ms
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min="60"
-                      max="180"
-                      step="5"
-                      value={tuning.minDurationMs}
-                      onChange={(e) => setTuning((prev) => ({ ...prev, minDurationMs: parseInt(e.target.value) || 90 }))}
-                      className="w-full"
-                    />
-                  </div>
-                </div>
-              )}
+            {/* Action Row: Primary Generate Lip Sync Button */}
+            <div className="pt-1">
+              <button
+                onClick={handleGenerate}
+                disabled={isProcessing || !selectedCharId || !selectedSheetId || !selectedAudioId}
+                className="w-full py-2.5 rounded-editor-md bg-editor-accentAction hover:bg-editor-accent disabled:opacity-35 text-white font-medium flex items-center justify-center space-x-2 shadow-sm transition-all active:scale-[0.99]"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{isProcessing ? 'Synchronizing Speech...' : 'Generate Lip Sync'}</span>
+              </button>
             </div>
 
-            {/* Position & Anchor Fine-Tuning */}
-            <div className="bg-editor-surface border border-editor-border rounded-editor-md p-3 space-y-3">
-              {/* Mouth Placement on Character */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-editor-accent font-semibold text-xs">
-                  <span className="flex items-center space-x-1">
-                    <Move className="w-3.5 h-3.5" />
-                    <span>Mouth Position on Character</span>
+            {/* Collapsible Tuning & Positioning Sections */}
+            <div className="space-y-2 pt-1">
+              {/* Section 1: Mouth Position on Character */}
+              <div className="border border-editor-border/80 rounded-editor-md overflow-hidden bg-editor-surface/60">
+                <button
+                  type="button"
+                  onClick={() => toggleSection('position')}
+                  className="w-full px-3 py-2 bg-editor-surface hover:bg-editor-hover/50 flex items-center justify-between transition-colors"
+                >
+                  <span className="font-semibold text-editor-text text-xs flex items-center space-x-1.5">
+                    <Move className="w-3.5 h-3.5 text-editor-accent" />
+                    <span>Mouth Position</span>
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => setCharMouthAnchor({ x: 0.5, y: 0.5 })}
-                    className="text-[10px] text-editor-muted hover:text-editor-text underline font-normal"
-                    title="Center on character (50%, 50%)"
-                  >
-                    Reset (50%, 50%)
-                  </button>
-                </div>
-
-                <div className="space-y-1.5">
-                  <div>
-                    <div className="flex justify-between text-[11px] text-editor-secondary mb-0.5">
-                      <span>Position X</span>
-                      <span className="font-mono text-editor-text">{Math.round(charMouthAnchor.x * 100)}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.005"
-                      value={charMouthAnchor.x}
-                      onChange={(e) => setCharMouthAnchor((prev) => ({ ...prev, x: parseFloat(e.target.value) }))}
-                      className="w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between text-[11px] text-editor-secondary mb-0.5">
-                      <span>Position Y</span>
-                      <span className="font-mono text-editor-text">{Math.round(charMouthAnchor.y * 100)}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.005"
-                      value={charMouthAnchor.y}
-                      onChange={(e) => setCharMouthAnchor((prev) => ({ ...prev, y: parseFloat(e.target.value) }))}
-                      className="w-full"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Mouth Center Anchor */}
-              <div className="pt-2 border-t border-editor-border/60 space-y-1.5">
-                <div className="flex items-center justify-between text-editor-accent font-semibold text-xs">
-                  <span className="flex items-center space-x-1">
-                    <Crosshair className="w-3.5 h-3.5" />
-                    <span>Mouth Center Anchor</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setMouthSpriteAnchor({ anchorX: 0.5, anchorY: 0.5 })}
-                    className="px-2 py-0.5 text-[10px] rounded-editor-sm bg-editor-accent/15 hover:bg-editor-accent/25 border border-editor-accent/30 text-editor-accent transition-colors"
-                  >
-                    Put at Center
-                  </button>
-                </div>
-
-                <div className="space-y-1.5">
-                  <div>
-                    <div className="flex justify-between text-[11px] text-editor-secondary mb-0.5">
-                      <span>Internal X</span>
-                      <span className="font-mono text-editor-text">{Math.round(mouthSpriteAnchor.anchorX * 100)}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.01"
-                      value={mouthSpriteAnchor.anchorX}
-                      onChange={(e) => setMouthSpriteAnchor((prev) => ({ ...prev, anchorX: parseFloat(e.target.value) }))}
-                      className="w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between text-[11px] text-editor-secondary mb-0.5">
-                      <span>Internal Y</span>
-                      <span className="font-mono text-editor-text">{Math.round(mouthSpriteAnchor.anchorY * 100)}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.01"
-                      value={mouthSpriteAnchor.anchorY}
-                      onChange={(e) => setMouthSpriteAnchor((prev) => ({ ...prev, anchorY: parseFloat(e.target.value) }))}
-                      className="w-full"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Mouth Scale */}
-              <div className="pt-2 border-t border-editor-border/60">
-                <div className="flex justify-between text-[11px] text-editor-secondary mb-0.5">
-                  <span>Mouth Scale (or wheel on canvas)</span>
-                  <span className="font-mono text-editor-text font-medium">{Math.round(mouthScale * 100)}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="0.06"
-                  max="0.75"
-                  step="0.01"
-                  value={mouthScale}
-                  onChange={(e) => setMouthScale(parseFloat(e.target.value))}
-                  className="w-full"
-                />
-              </div>
-
-              {/* Mouth Rotation */}
-              <div className="pt-2 border-t border-editor-border/60">
-                <div className="flex justify-between items-center text-[11px] text-editor-secondary mb-0.5">
-                  <span className="flex items-center space-x-1">
-                    <RotateCw className="w-3 h-3 text-editor-accent" />
-                    <span>Mouth Rotation</span>
-                  </span>
-                  <div className="flex items-center space-x-1.5">
-                    <span className="font-mono text-editor-text">
-                      {mouthRotation > 0 ? `+${mouthRotation}°` : `${mouthRotation}°`}
+                  <div className="flex items-center space-x-2">
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCharMouthAnchor({ x: 0.5, y: 0.5 });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.stopPropagation();
+                          setCharMouthAnchor({ x: 0.5, y: 0.5 });
+                        }
+                      }}
+                      className="text-[10px] text-editor-muted hover:text-editor-text underline font-normal cursor-pointer select-none"
+                      title="Reset to center (50%, 50%)"
+                    >
+                      Reset
                     </span>
-                    {mouthRotation !== 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setMouthRotation(0)}
-                        className="text-[10px] text-editor-muted hover:text-editor-text underline ml-1"
-                        title="Reset rotation to 0°"
-                      >
-                        Reset
-                      </button>
+                    {expandedSections.position ? (
+                      <ChevronUp className="w-3.5 h-3.5 text-editor-muted" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5 text-editor-muted" />
                     )}
                   </div>
-                </div>
-                <input
-                  type="range"
-                  min="-180"
-                  max="180"
-                  step="1"
-                  value={mouthRotation}
-                  onChange={(e) => setMouthRotation(parseInt(e.target.value) || 0)}
-                  className="w-full"
-                />
+                </button>
+                {expandedSections.position && (
+                  <div className="p-3 pt-2 space-y-2 border-t border-editor-border/40 animate-dropdown-enter">
+                    <div>
+                      <div className="flex justify-between text-[11px] text-editor-secondary mb-0.5">
+                        <span>Position X</span>
+                        <span className="font-mono text-editor-text">{Math.round(charMouthAnchor.x * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.005"
+                        value={charMouthAnchor.x}
+                        onChange={(e) => setCharMouthAnchor((prev) => ({ ...prev, x: parseFloat(e.target.value) }))}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-[11px] text-editor-secondary mb-0.5">
+                        <span>Position Y</span>
+                        <span className="font-mono text-editor-text">{Math.round(charMouthAnchor.y * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.005"
+                        value={charMouthAnchor.y}
+                        onChange={(e) => setCharMouthAnchor((prev) => ({ ...prev, y: parseFloat(e.target.value) }))}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Section 2: Mouth Center Anchor */}
+              <div className="border border-editor-border/80 rounded-editor-md overflow-hidden bg-editor-surface/60">
+                <button
+                  type="button"
+                  onClick={() => toggleSection('anchor')}
+                  className="w-full px-3 py-2 bg-editor-surface hover:bg-editor-hover/50 flex items-center justify-between transition-colors"
+                >
+                  <span className="font-semibold text-editor-text text-xs flex items-center space-x-1.5">
+                    <Crosshair className="w-3.5 h-3.5 text-editor-accent" />
+                    <span>Mouth Center Anchor</span>
+                  </span>
+                  <div className="flex items-center space-x-2">
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMouthSpriteAnchor({ anchorX: 0.5, anchorY: 0.5 });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.stopPropagation();
+                          setMouthSpriteAnchor({ anchorX: 0.5, anchorY: 0.5 });
+                        }
+                      }}
+                      className="text-[10px] text-editor-muted hover:text-editor-text underline font-normal cursor-pointer select-none"
+                      title="Put center at (50%, 50%)"
+                    >
+                      Center
+                    </span>
+                    {expandedSections.anchor ? (
+                      <ChevronUp className="w-3.5 h-3.5 text-editor-muted" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5 text-editor-muted" />
+                    )}
+                  </div>
+                </button>
+                {expandedSections.anchor && (
+                  <div className="p-3 pt-2 space-y-2 border-t border-editor-border/40 animate-dropdown-enter">
+                    <div>
+                      <div className="flex justify-between text-[11px] text-editor-secondary mb-0.5">
+                        <span>Internal Anchor X</span>
+                        <span className="font-mono text-editor-text">{Math.round(mouthSpriteAnchor.anchorX * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.01"
+                        value={mouthSpriteAnchor.anchorX}
+                        onChange={(e) => setMouthSpriteAnchor((prev) => ({ ...prev, anchorX: parseFloat(e.target.value) }))}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-[11px] text-editor-secondary mb-0.5">
+                        <span>Internal Anchor Y</span>
+                        <span className="font-mono text-editor-text">{Math.round(mouthSpriteAnchor.anchorY * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.01"
+                        value={mouthSpriteAnchor.anchorY}
+                        onChange={(e) => setMouthSpriteAnchor((prev) => ({ ...prev, anchorY: parseFloat(e.target.value) }))}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Section 3: Mouth Scale and Alignment */}
+              <div className="border border-editor-border/80 rounded-editor-md overflow-hidden bg-editor-surface/60">
+                <button
+                  type="button"
+                  onClick={() => toggleSection('scaleAlign')}
+                  className="w-full px-3 py-2 bg-editor-surface hover:bg-editor-hover/50 flex items-center justify-between transition-colors"
+                >
+                  <span className="font-semibold text-editor-text text-xs flex items-center space-x-1.5">
+                    <RotateCw className="w-3.5 h-3.5 text-editor-accent" />
+                    <span>Mouth Scale & Rotation</span>
+                  </span>
+                  <div className="flex items-center space-x-2">
+                    {mouthRotation !== 0 && (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMouthRotation(0);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.stopPropagation();
+                            setMouthRotation(0);
+                          }
+                        }}
+                        className="text-[10px] text-editor-muted hover:text-editor-text underline font-normal cursor-pointer select-none"
+                        title="Reset rotation to 0°"
+                      >
+                        Reset 0°
+                      </span>
+                    )}
+                    {expandedSections.scaleAlign ? (
+                      <ChevronUp className="w-3.5 h-3.5 text-editor-muted" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5 text-editor-muted" />
+                    )}
+                  </div>
+                </button>
+                {expandedSections.scaleAlign && (
+                  <div className="p-3 pt-2 space-y-2.5 border-t border-editor-border/40 animate-dropdown-enter">
+                    <div>
+                      <div className="flex justify-between text-[11px] text-editor-secondary mb-0.5">
+                        <span>Mouth Scale (or wheel on canvas)</span>
+                        <span className="font-mono text-editor-text font-medium">{Math.round(mouthScale * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.06"
+                        max="0.75"
+                        step="0.01"
+                        value={mouthScale}
+                        onChange={(e) => setMouthScale(parseFloat(e.target.value))}
+                        className="w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between items-center text-[11px] text-editor-secondary mb-0.5">
+                        <span className="flex items-center space-x-1">
+                          <span>Mouth Rotation</span>
+                        </span>
+                        <span className="font-mono text-editor-text">
+                          {mouthRotation > 0 ? `+${mouthRotation}°` : `${mouthRotation}°`}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="-180"
+                        max="180"
+                        step="1"
+                        value={mouthRotation}
+                        onChange={(e) => setMouthRotation(parseInt(e.target.value) || 0)}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Section 4: Lip-Sync Timing and Advanced Settings */}
+              <div className="border border-editor-border/80 rounded-editor-md overflow-hidden bg-editor-surface/60">
+                <button
+                  type="button"
+                  onClick={() => toggleSection('timing')}
+                  className="w-full px-3 py-2 bg-editor-surface hover:bg-editor-hover/50 flex items-center justify-between transition-colors"
+                >
+                  <span className="font-semibold text-editor-text text-xs flex items-center space-x-1.5">
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-editor-accent" />
+                    <span>Lip-Sync Timing & Advanced</span>
+                  </span>
+                  <div className="flex items-center space-x-2">
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTuning(DEFAULT_LIPSYNC_TUNING);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.stopPropagation();
+                          setTuning(DEFAULT_LIPSYNC_TUNING);
+                        }
+                      }}
+                      className="text-[10px] text-editor-muted hover:text-editor-text underline font-normal cursor-pointer select-none"
+                      title="Reset tuning defaults"
+                    >
+                      Reset
+                    </span>
+                    {expandedSections.timing ? (
+                      <ChevronUp className="w-3.5 h-3.5 text-editor-muted" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5 text-editor-muted" />
+                    )}
+                  </div>
+                </button>
+                {expandedSections.timing && (
+                  <div className="p-3 pt-2 space-y-2.5 border-t border-editor-border/40 animate-dropdown-enter">
+                    {/* Speed */}
+                    <div>
+                      <div className="flex justify-between text-[11px] text-editor-secondary mb-1">
+                        <span>Speech Speed</span>
+                        <span className="capitalize text-editor-text font-medium">{tuning.speed}</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1 bg-editor-subpanel p-0.5 rounded-editor-sm border border-editor-border/80">
+                        {(['slower', 'natural', 'faster']).map((spd) => (
+                          <button
+                            key={spd}
+                            type="button"
+                            onClick={() => setTuning((prev) => ({ ...prev, speed: spd as any }))}
+                            className={`py-1 text-center text-[10px] font-semibold rounded capitalize transition-all ${
+                              tuning.speed === spd
+                                ? 'bg-editor-accentAction text-white'
+                                : 'text-editor-muted hover:text-editor-text'
+                            }`}
+                          >
+                            {spd}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Smoothness */}
+                    <div>
+                      <div className="flex justify-between text-[11px] text-editor-secondary mb-1">
+                        <span>Transition Smoothness</span>
+                        <span className="text-editor-text font-medium">
+                          {tuning.smoothness === 'low' ? 'Crisp' : tuning.smoothness === 'high' ? 'Smooth' : 'Natural'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1 bg-editor-subpanel p-0.5 rounded-editor-sm border border-editor-border/80">
+                        {[
+                          { id: 'low', label: 'Crisp' },
+                          { id: 'medium', label: 'Natural' },
+                          { id: 'high', label: 'Smooth' },
+                        ].map((sm) => (
+                          <button
+                            key={sm.id}
+                            type="button"
+                            onClick={() => setTuning((prev) => ({ ...prev, smoothness: sm.id as any }))}
+                            className={`py-1 text-center text-[10px] font-semibold rounded transition-all ${
+                              tuning.smoothness === sm.id
+                                ? 'bg-editor-accentAction text-white'
+                                : 'text-editor-muted hover:text-editor-text'
+                            }`}
+                          >
+                            {sm.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Min Cue Duration */}
+                    <div>
+                      <div className="flex justify-between items-center text-[11px] text-editor-secondary mb-0.5">
+                        <span>Min Cue Duration</span>
+                        <span className="font-mono text-editor-accent font-semibold bg-editor-subpanel px-1.5 py-0.5 rounded border border-editor-border/80 text-[10px]">
+                          {tuning.minDurationMs}ms
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="60"
+                        max="180"
+                        step="5"
+                        value={tuning.minDurationMs}
+                        onChange={(e) => setTuning((prev) => ({ ...prev, minDurationMs: parseInt(e.target.value) || 90 }))}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1387,6 +1498,17 @@ export const LipSyncModal: React.FC = () => {
                 style={{ cursor: canvasCursor }}
                 className="max-w-full max-h-full border border-editor-border rounded-editor-md bg-editor-surface shadow-modal select-none"
               />
+              {!selectedCharAsset && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center p-6 bg-editor-panel/50 backdrop-blur-[2px] rounded-editor-md">
+                  <div className="w-12 h-12 rounded-full bg-editor-subpanel border border-editor-border/80 flex items-center justify-center mb-2 text-editor-accent">
+                    <Smile className="w-6 h-6 opacity-60" />
+                  </div>
+                  <p className="text-xs font-semibold text-editor-secondary">No Character Selected</p>
+                  <p className="text-[11px] text-editor-muted mt-1 max-w-xs">
+                    Select a character image and mouth sprite sheet on the left to preview alignment
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Audio & Cue Scrubber Bar */}
@@ -1443,7 +1565,11 @@ export const LipSyncModal: React.FC = () => {
                         title={`Audition shape ${shape}${isTuned ? ' (Custom Tuned)' : ''}`}
                       >
                         <div className="w-5 h-5 bg-black/40 rounded flex items-center justify-center overflow-hidden border border-editor-border/40">
-                          <img src={sp.url} alt={shape} className="w-full h-full object-contain" />
+                          {sp.url ? (
+                            <img src={sp.url} alt={shape} className="w-full h-full object-contain" />
+                          ) : (
+                            <span className="text-[10px] font-mono font-bold text-editor-accent">{shape}</span>
+                          )}
                         </div>
                         <span className="text-[11px] font-mono">{shape}</span>
                         {isTuned && (

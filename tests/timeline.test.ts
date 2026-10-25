@@ -190,13 +190,13 @@ describe('Timeline Engine Tests', () => {
       { id: 'V3', clips: [] },
       { id: 'V4', clips: [] }
     ];
-    expect(calculateProjectDuration(tracks, [], 5.0)).toBe(12.5);
+    expect(calculateProjectDuration(tracks, [], 5.0)).toBe(12.0);
 
     // Audio clip ending even later at 22.0s auto-expands duration
     const audioClips = [
       { id: 'ac1', assetId: 'aud1', start: 0, duration: 22.0, volume: 1, trimStart: 0, trimEnd: 22.0 }
     ];
-    expect(calculateProjectDuration(tracks, audioClips, 5.0)).toBe(22.5);
+    expect(calculateProjectDuration(tracks, audioClips, 5.0)).toBe(22.0);
   });
 
   it('calculates fit-to-screen maintaining aspect ratio and centering on canvas', () => {
@@ -244,5 +244,39 @@ describe('Timeline Engine Tests', () => {
     expect(useEditorStore.getState().project.audioClips[0].start).toBe(4.5);
     expect(useEditorStore.getState().project.audioClips[0].duration).toBe(2.5); // 7.0 - 4.5 = 2.5
     expect(useEditorStore.getState().project.audioClips[0].trimStart).toBe(1.0); // trimmed by 1.0s
+  });
+
+  it('automatically calculates timeline duration from clips without artificial padding', () => {
+    const store = useEditorStore.getState();
+    store.newProject('Automatic Duration Test');
+
+    // Add a 3s clip
+    store.addAudioClip({
+      id: 'a_short',
+      assetId: 'audio_short',
+      start: 0,
+      duration: 3.0,
+      volume: 1.0,
+      trimStart: 0,
+      trimEnd: 3.0,
+    });
+    // Clip ends at 3.0s: duration must automatically be 3.0s (no +0.5s padding)
+    expect(useEditorStore.getState().project.duration).toBe(3.0);
+
+    // Nudge/move the clip to start at 2.0 (ends at 5.0s)
+    store.moveAudioClip('a_short', 2.0);
+    expect(useEditorStore.getState().project.duration).toBe(5.0);
+
+    // Trim the clip end to 4.0s
+    store.trimAudioClip('a_short', 'end', 4.0);
+    expect(useEditorStore.getState().project.duration).toBe(4.0);
+
+    // Now move the clip far out to 35.0s (duration is 2.0s, ends at 37.0s) -> exact 37.0s with zero padding
+    store.moveAudioClip('a_short', 35.0);
+    expect(useEditorStore.getState().project.duration).toBe(37.0);
+
+    // Deleting the clip contracts timeline to 5.0s empty-project fallback
+    store.removeAudioClip('a_short');
+    expect(useEditorStore.getState().project.duration).toBe(5.0);
   });
 });

@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import { EditorAsset, MouthSetAsset } from '../../types/assets';
+import { EditorAsset, MouthSetAsset, MouthSprite } from '../../types/assets';
 import { EditorProject } from '../../types/project';
 
 export interface StoredAssetRecord {
@@ -31,10 +31,20 @@ export interface StoredProjectRecord {
   updatedAt: number;
 }
 
+export interface StoredSnapshotRecord {
+  id: string;
+  projectId: string;
+  name?: string;
+  dataJson: string;
+  isAuto: boolean;
+  createdAt: number;
+}
+
 class CartoonDatabase extends Dexie {
   assets!: Table<StoredAssetRecord, string>;
   mouthSets!: Table<StoredMouthSetRecord, string>;
   projects!: Table<StoredProjectRecord, string>;
+  snapshots!: Table<StoredSnapshotRecord, string>;
 
   constructor() {
     super('CartoonSpeaksV2_DB');
@@ -48,14 +58,21 @@ class CartoonDatabase extends Dexie {
       mouthSets: 'id, projectId, sourceAssetId, createdAt',
       projects: 'id, name, updatedAt',
     });
+    this.version(3).stores({
+      assets: 'id, projectId, type, name, createdAt',
+      mouthSets: 'id, projectId, sourceAssetId, createdAt',
+      projects: 'id, name, updatedAt',
+      snapshots: 'id, projectId, createdAt, isAuto',
+    });
   }
 }
 
 export const db = new CartoonDatabase();
 
-// In-memory cache for Object URLs and decoded HTMLImageElements
+// In-memory cache for Object URLs, decoded HTMLImageElements, and failed URLs
 const objectUrlCache = new Map<string, string>();
 const imageElementCache = new Map<string, HTMLImageElement>();
+const failedImageUrls = new Set<string>();
 
 export function getCachedObjectUrl(id: string, blob: Blob): string {
   if (objectUrlCache.has(id)) {
@@ -76,6 +93,10 @@ export function revokeCachedObjectUrl(id: string): void {
 }
 
 export async function getImageElement(assetId: string, url: string): Promise<HTMLImageElement> {
+  if (!url || failedImageUrls.has(url)) {
+    throw new Error(`Invalid or already failed URL for asset ${assetId}`);
+  }
+
   if (imageElementCache.has(assetId)) {
     const cached = imageElementCache.get(assetId)!;
     if (cached.complete && cached.naturalWidth > 0) {
@@ -90,7 +111,10 @@ export async function getImageElement(assetId: string, url: string): Promise<HTM
       imageElementCache.set(assetId, img);
       resolve(img);
     };
-    img.onerror = (e) => reject(new Error(`Failed to load image for asset ${assetId}: ${e}`));
+    img.onerror = (e) => {
+      failedImageUrls.add(url);
+      reject(new Error(`Failed to load image for asset ${assetId}: ${e}`));
+    };
     img.src = url;
   });
 }
@@ -140,12 +164,20 @@ export async function loadAllAssets(): Promise<EditorAsset[]> {
  * Saves a MouthSet into IndexedDB.
  */
 export async function saveMouthSet(mouthSet: MouthSetAsset): Promise<void> {
+  const sanitizedSprites: Record<string, any> = {};
+  for (const [key, sprite] of Object.entries(mouthSet.sprites)) {
+    sanitizedSprites[key] = {
+      ...sprite,
+      url: sprite.url && sprite.url.startsWith('blob:') ? '' : sprite.url,
+      blob: undefined,
+    };
+  }
   await db.mouthSets.put({
     id: mouthSet.id,
     projectId: mouthSet.projectId,
     name: mouthSet.name,
     sourceAssetId: mouthSet.sourceAssetId,
-    spritesJson: JSON.stringify(mouthSet.sprites),
+    spritesJson: JSON.stringify(sanitizedSprites),
     createdAt: mouthSet.createdAt,
   });
 }
@@ -155,14 +187,23 @@ export async function saveMouthSet(mouthSet: MouthSetAsset): Promise<void> {
  */
 export async function loadAllMouthSets(): Promise<MouthSetAsset[]> {
   const records = await db.mouthSets.toArray();
-  return records.map((r) => ({
-    id: r.id,
-    projectId: r.projectId,
-    name: r.name,
-    sourceAssetId: r.sourceAssetId,
-    sprites: JSON.parse(r.spritesJson),
-    createdAt: r.createdAt,
-  }));
+  return records.map((r) => {
+    const sprites: Record<string, MouthSprite> = JSON.parse(r.spritesJson);
+    for (const s of Object.values(sprites)) {
+      // Clear all expired blob URLs loaded from persistent storage
+      if (s.url && s.url.startsWith('blob:')) {
+        s.url = '';
+      }
+    }
+    return {
+      id: r.id,
+      projectId: r.projectId,
+      name: r.name,
+      sourceAssetId: r.sourceAssetId,
+      sprites,
+      createdAt: r.createdAt,
+    };
+  });
 }
 
 /**
@@ -196,12 +237,86 @@ export async function clearAllAssetsFromDb(): Promise<void> {
  * Saves an EditorProject to IndexedDB.
  */
 export async function saveProjectToDb(project: EditorProject): Promise<void> {
+  if (typeof indexedDB === 'undefined') return;
   await db.projects.put({
     id: project.id,
     name: project.name,
     dataJson: JSON.stringify(project),
     updatedAt: Date.now(),
   });
+}
+
+export const saveProject = saveProjectToDb;
+
+/**
+ * Saves a version snapshot for a project.
+ * Automatically keeps at most 10 rolling autosaves per project.
+ */
+export async function saveSnapshotToDb(
+  projectId: string,
+  project: EditorProject,
+  isAuto: boolean = true,
+  name?: string
+): Promise<StoredSnapshotRecord> {
+  const snapshot: StoredSnapshotRecord = {
+    id: `snap_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    projectId,
+    name: name || (isAuto ? 'Autosave Snapshot' : 'Manual Checkpoint'),
+    dataJson: JSON.stringify(project),
+    isAuto,
+    createdAt: Date.now(),
+  };
+
+  if (typeof indexedDB === 'undefined') return snapshot;
+  await db.snapshots.put(snapshot);
+
+  // If auto snapshot, trim rolling history to maximum 10
+  if (isAuto) {
+    try {
+      const autoSnaps = await db.snapshots
+        .where('projectId')
+        .equals(projectId)
+        .filter((s) => s.isAuto)
+        .sortBy('createdAt');
+
+      if (autoSnaps.length > 10) {
+        const toDelete = autoSnaps.slice(0, autoSnaps.length - 10);
+        await db.snapshots.bulkDelete(toDelete.map((s) => s.id));
+      }
+    } catch (e) {
+      console.warn('Failed to trim old autosaves:', e);
+    }
+  }
+
+  return snapshot;
+}
+
+/**
+ * Retrieves all stored snapshots for a specific project sorted descending by createdAt.
+ */
+export async function listProjectSnapshots(projectId: string): Promise<StoredSnapshotRecord[]> {
+  const snaps = await db.snapshots
+    .where('projectId')
+    .equals(projectId)
+    .reverse()
+    .sortBy('createdAt');
+  return snaps;
+}
+
+/**
+ * Deletes a snapshot by its ID.
+ */
+export async function deleteSnapshotFromDb(id: string): Promise<void> {
+  await db.snapshots.delete(id);
+}
+
+/**
+ * Restores project from snapshot record.
+ */
+export async function restoreSnapshotFromDb(snapshotId: string): Promise<EditorProject | null> {
+  const snap = await db.snapshots.get(snapshotId);
+  if (!snap) return null;
+  return JSON.parse(snap.dataJson);
 }
 
 /**
@@ -222,7 +337,7 @@ export async function listStoredProjects(): Promise<Array<{ id: string; name: st
 }
 
 /**
- * Deletes a project from IndexedDB and all its associated assets.
+ * Deletes a project from IndexedDB and all its associated assets and snapshots.
  */
 export async function deleteProjectFromDb(id: string): Promise<void> {
   await db.projects.delete(id);
@@ -233,5 +348,6 @@ export async function deleteProjectFromDb(id: string): Promise<void> {
     }
     await db.assets.where('projectId').equals(id).delete();
     await db.mouthSets.where('projectId').equals(id).delete();
+    await db.snapshots.where('projectId').equals(id).delete();
   } catch (_) {}
 }

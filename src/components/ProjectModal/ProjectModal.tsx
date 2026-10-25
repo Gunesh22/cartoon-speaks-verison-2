@@ -33,6 +33,7 @@ export const ProjectModal: React.FC = () => {
     saveProject,
     renameProject,
     assets,
+    initStore,
   } = useEditorStore();
 
   const [projectName, setProjectName] = useState(project.name);
@@ -74,6 +75,7 @@ export const ProjectModal: React.FC = () => {
   const handleLoad = async (id: string) => {
     const loaded = await loadProjectFromDb(id);
     if (loaded) {
+      await initStore();
       setProject(loaded);
       setProjectModalOpen(false);
     }

@@ -195,6 +195,25 @@ export async function cropSpriteToBlob(
     cropRect.height
   );
 
+  // If source image has a solid background (e.g. solid black or white from an AI sprite sheet), make it transparent
+  try {
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const px = imgData.data;
+    const corners = [0, (canvas.width - 1) * 4, (canvas.height - 1) * canvas.width * 4, (canvas.height * canvas.width - 1) * 4];
+    let darkCount = 0;
+    for (const c of corners) {
+      if (px[c + 3] > 128 && px[c] < 35 && px[c + 1] < 35 && px[c + 2] < 35) darkCount++;
+    }
+    if (darkCount >= 3) {
+      for (let i = 0; i < px.length; i += 4) {
+        if (px[i] < 35 && px[i + 1] < 35 && px[i + 2] < 35) {
+          px[i + 3] = 0;
+        }
+      }
+      ctx.putImageData(imgData, 0, 0);
+    }
+  } catch (_) {}
+
   return new Promise<{ blob: Blob; url: string }>((resolve, reject) => {
     canvas.toBlob((blob) => {
       if (!blob) {

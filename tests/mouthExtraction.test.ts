@@ -50,6 +50,51 @@ describe('Mouth Extraction and Bounds Detection Tests', () => {
     expect(result.suggestedAnchor.anchorX).toBeCloseTo(0.49, 1);
   });
 
+  it('rejects isolated corner letter labels and keeps strictly the central mouth artwork (BUG-08)', () => {
+    // 100x100 cell:
+    // Isolated text label 'A' at top-left corner: x=2..6, y=2..7 (20 pixels)
+    // Main mouth artwork in the center: x=35..65, y=40..55 (31 x 16 = 496 pixels)
+    const width = 100;
+    const height = 100;
+    const data = new Uint8ClampedArray(width * height * 4);
+
+    // Draw small corner label 'A'
+    for (let y = 2; y <= 7; y++) {
+      for (let x = 2; x <= 6; x++) {
+        const idx = (y * width + x) * 4;
+        data[idx] = 0;       // black text
+        data[idx + 1] = 0;
+        data[idx + 2] = 0;
+        data[idx + 3] = 255; // alpha
+      }
+    }
+
+    // Draw central mouth artwork
+    for (let y = 40; y <= 55; y++) {
+      for (let x = 35; x <= 65; x++) {
+        const idx = (y * width + x) * 4;
+        data[idx] = 220;     // red/pink lips
+        data[idx + 1] = 50;
+        data[idx + 2] = 50;
+        data[idx + 3] = 255; // alpha
+      }
+    }
+
+    const result = detectMouthBounds(data, width, height);
+
+    expect(result.hasContent).toBe(true);
+    // Bounding box must ONLY encompass the mouth artwork (35..65, 40..55), completely excluding the corner label (2..6, 2..7)
+    expect(result.bounds.minX).toBe(35);
+    expect(result.bounds.maxX).toBe(65);
+    expect(result.bounds.minY).toBe(40);
+    expect(result.bounds.maxY).toBe(55);
+    expect(result.bounds.width).toBe(31);
+    expect(result.bounds.height).toBe(16);
+    expect(result.visibleCount).toBe(496); // Exactly mouth pixels, not 496 + 30
+    // Corner warning should NOT be triggered because label at (2,2) was filtered out
+    expect(result.warning).toBeUndefined();
+  });
+
   it('correctly reports empty / fully transparent cell as invalid', () => {
     const data = new Uint8ClampedArray(40 * 40 * 4); // all 0 alpha
     const result = detectMouthBounds(data, 40, 40);
@@ -250,5 +295,57 @@ describe('Mouth Extraction and Bounds Detection Tests', () => {
 
     expect(tunedRect.drawWidth).toBeCloseTo(baseRect.drawWidth * 1.2, 1);
     expect(tunedRect.targetPinY).toBe(baseRect.targetPinY + 400 * 0.02);
+  });
+
+  it('rejects grid and border lines and accurately isolates central mouth (FEATURE 01)', () => {
+    const width = 100;
+    const height = 100;
+    const data = new Uint8ClampedArray(width * height * 4);
+
+    // Draw horizontal top grid border at y=0 across entire width
+    for (let x = 0; x < width; x++) {
+      const idx = (0 * width + x) * 4;
+      data[idx + 3] = 255;
+    }
+
+    // Draw vertical right border at x=99 across entire height
+    for (let y = 0; y < height; y++) {
+      const idx = (y * width + 99) * 4;
+      data[idx + 3] = 255;
+    }
+
+    // Draw central mouth artwork: x=30..60, y=40..55
+    for (let y = 40; y <= 55; y++) {
+      for (let x = 30; x <= 60; x++) {
+        const idx = (y * width + x) * 4;
+        data[idx] = 200;
+        data[idx + 3] = 255;
+      }
+    }
+
+    const result = detectMouthBounds(data, width, height);
+
+    expect(result.hasContent).toBe(true);
+    expect(result.bounds.minX).toBe(30);
+    expect(result.bounds.maxX).toBe(60);
+    expect(result.bounds.minY).toBe(40);
+    expect(result.bounds.maxY).toBe(55);
+    expect(result.bounds.width).toBe(31);
+    expect(result.bounds.height).toBe(16);
+  });
+
+  it('reports hasContent: false for empty cell containing only grid border lines (FEATURE 01)', () => {
+    const width = 80;
+    const height = 80;
+    const data = new Uint8ClampedArray(width * height * 4);
+
+    // Only top border line
+    for (let x = 0; x < width; x++) {
+      data[(0 * width + x) * 4 + 3] = 255;
+    }
+
+    const result = detectMouthBounds(data, width, height);
+    expect(result.hasContent).toBe(false);
+    expect(result.warning).toContain('grid or border lines');
   });
 });

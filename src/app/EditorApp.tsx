@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useEditorStore } from '../state/editorStore';
 import { Toolbar } from '../components/Toolbar/Toolbar';
 import { AssetPanel } from '../components/AssetPanel/AssetPanel';
+import { StoryboardPanel } from '../components/StoryboardPanel/StoryboardPanel';
 import { PreviewCanvas } from '../components/PreviewCanvas/PreviewCanvas';
 import { PropertiesPanel } from '../components/PropertiesPanel/PropertiesPanel';
 import { Timeline } from '../components/Timeline/Timeline';
@@ -9,6 +10,8 @@ import { LipSyncModal } from '../components/LipSyncModal/LipSyncModal';
 import { ExportModal } from '../components/ExportModal/ExportModal';
 import { ProjectModal } from '../components/ProjectModal/ProjectModal';
 import { PromptModal } from '../components/PromptModal/PromptModal';
+import { VoiceRecorderModal } from '../components/VoiceRecorder/VoiceRecorderModal';
+import { SnapshotModal } from '../components/SnapshotModal/SnapshotModal';
 import { ProjectHub } from '../components/ProjectHub/ProjectHub';
 
 export const EditorApp: React.FC = () => {
@@ -24,6 +27,7 @@ export const EditorApp: React.FC = () => {
         <ProjectHub />
         <ProjectModal />
         <PromptModal />
+        <SnapshotModal />
       </div>
     );
   }
@@ -36,6 +40,7 @@ export const EditorApp: React.FC = () => {
       {/* Central Editing Surface: Left Assets, Center Canvas, Right Properties */}
       <div className="flex-1 flex overflow-hidden">
         <AssetPanel />
+        <StoryboardPanel />
         <PreviewCanvas />
         <PropertiesPanel />
       </div>
@@ -48,6 +53,8 @@ export const EditorApp: React.FC = () => {
       <ExportModal />
       <ProjectModal />
       <PromptModal />
+      <VoiceRecorderModal />
+      <SnapshotModal />
     </div>
   );
 };

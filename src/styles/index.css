@@ -121,3 +121,61 @@ input[type="number"] {
   border-color: #8B5CF6;
   box-shadow: 0 0 0 1px #8B5CF6;
 }
+
+/* Accessible focus ring */
+:focus-visible {
+  outline: 2px solid #8B5CF6;
+  outline-offset: 1px;
+}
+
+/* Micro-interaction transitions & utility classes */
+.transition-smooth {
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.transition-quick {
+  transition: all 0.12s ease-out;
+}
+
+/* Modal Animations */
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-modal-enter {
+  animation: modalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-dropdown-enter {
+  animation: dropdownFadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Respect user's operating-system prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

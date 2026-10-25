@@ -4,6 +4,7 @@ import { EditorAsset, MouthSetAsset } from '../../types/assets';
 import { getActiveVisualClipsInRenderOrder } from '../timeline/timelineMath';
 import { calculateMouthDrawRect } from '../../features/lipSync/anchor';
 import { getImageElement } from '../assets/assetDb';
+import { getClipTransformAtTime, EvaluatedTransform } from '../timeline/keyframeMath';
 
 export interface RenderContext {
   canvas: HTMLCanvasElement;
@@ -12,6 +13,7 @@ export interface RenderContext {
   assets: Map<string, EditorAsset>;
   mouthSets: Map<string, MouthSetAsset>;
   showCheckerboard?: boolean;
+  transparent?: boolean;
 }
 
 /**
@@ -41,12 +43,14 @@ export function drawCheckerboard(
  * This function produces the exact clean visual output used for both Preview and Video Export.
  */
 export async function renderCompositionFrame(ctx: CanvasRenderingContext2D, context: RenderContext): Promise<void> {
-  const { project, time, assets, mouthSets, showCheckerboard = false } = context;
+  const { project, time, assets, mouthSets, showCheckerboard = false, transparent = false } = context;
   const { width, height } = project;
 
   ctx.clearRect(0, 0, width, height);
 
-  if (showCheckerboard) {
+  if (transparent) {
+    // Preserve transparent alpha background for WebM alpha exports (Feature 14)
+  } else if (showCheckerboard) {
     drawCheckerboard(ctx, width, height);
   } else {
     // Solid dark canvas backdrop
@@ -60,6 +64,26 @@ export async function renderCompositionFrame(ctx: CanvasRenderingContext2D, cont
   for (const clip of activeClips) {
     await renderVisualClip(ctx, clip, time, assets, mouthSets);
   }
+}
+
+/**
+ * Calculates subtle procedural idle motion (breathing oscillation and subtle head sway)
+ * for a character layer. Deterministic function of local clip time (Feature 03).
+ */
+export function calculateIdleMotion(localTime: number): {
+  offsetX: number;
+  offsetY: number;
+  tiltDeg: number;
+} {
+  if (localTime < 0) return { offsetX: 0, offsetY: 0, tiltDeg: 0 };
+  // Gentle breathing cycle (~0.35 Hz)
+  const breathY = Math.sin(localTime * 2.2) * 1.8;
+  // Subtle horizontal sway (~0.22 Hz)
+  const swayX = Math.sin(localTime * 1.4) * 0.8;
+  // Subtle head tilt (~0.15 Hz, +/- 0.45 deg)
+  const tiltDeg = Math.sin(localTime * 0.9) * 0.45;
+
+  return { offsetX: swayX, offsetY: breathY, tiltDeg };
 }
 
 /**
@@ -82,32 +106,44 @@ export async function renderVisualClip(
     return;
   }
 
+  const localTime = Math.max(0, globalTime - clip.start);
+  const tf = getClipTransformAtTime(clip, localTime);
+
   ctx.save();
 
   // Apply clip opacity
-  ctx.globalAlpha = Math.max(0, Math.min(1, clip.opacity ?? 1.0));
+  ctx.globalAlpha = Math.max(0, Math.min(1, tf.opacity));
 
   // Position, translate to clip center for rotation
-  const centerX = clip.x + clip.width / 2;
-  const centerY = clip.y + clip.height / 2;
+  let centerX = tf.x + tf.width / 2;
+  let centerY = tf.y + tf.height / 2;
+  let rotationDeg = tf.rotation || 0;
+
+  if (clip.idleMotion) {
+    const idle = calculateIdleMotion(localTime);
+    centerX += idle.offsetX;
+    centerY += idle.offsetY;
+    rotationDeg += idle.tiltDeg;
+  }
+
   ctx.translate(centerX, centerY);
 
-  if (clip.rotation) {
-    ctx.rotate((clip.rotation * Math.PI) / 180);
+  if (rotationDeg) {
+    ctx.rotate((rotationDeg * Math.PI) / 180);
   }
 
   // Draw base image centered at (0, 0) in rotated space
   ctx.drawImage(
     baseImage,
-    -clip.width / 2,
-    -clip.height / 2,
-    clip.width,
-    clip.height
+    -tf.width / 2,
+    -tf.height / 2,
+    tf.width,
+    tf.height
   );
 
   // If this is a lipSync clip, calculate and render the active mouth cue
   if (clip.type === 'lipSync' && clip.lipSyncData) {
-    await renderMouthOverlay(ctx, clip, globalTime, mouthSets);
+    await renderMouthOverlay(ctx, clip, globalTime, mouthSets, assets, tf);
   }
 
   ctx.restore();
@@ -120,13 +156,20 @@ async function renderMouthOverlay(
   ctx: CanvasRenderingContext2D,
   clip: VisualClip,
   globalTime: number,
-  mouthSets: Map<string, MouthSetAsset>
+  mouthSets: Map<string, MouthSetAsset>,
+  assets: Map<string, EditorAsset>,
+  tf?: EvaluatedTransform
 ): Promise<void> {
   const lipSync = clip.lipSyncData;
   if (!lipSync) return;
 
   const mouthSet = lipSync.mouthSetId ? mouthSets.get(lipSync.mouthSetId) : undefined;
   if (!mouthSet) return;
+
+  // Safety guard: Never draw character's own full image as a mouth overlay
+  if (mouthSet.sourceAssetId === clip.assetId) {
+    return;
+  }
 
   // Local clip time in seconds
   const localTime = globalTime - clip.start;
@@ -147,21 +190,43 @@ async function renderMouthOverlay(
     mouthSet.sprites['A'] ||
     Object.values(mouthSet.sprites)[0];
 
-  if (!sprite || !sprite.url) return;
+  if (!sprite) return;
 
-  let mouthImage: HTMLImageElement;
-  try {
-    mouthImage = await getImageElement(sprite.id, sprite.url);
-  } catch {
+  let mouthImage: HTMLImageElement | null = null;
+  let sourceSheetImage: HTMLImageElement | null = null;
+
+  // 1. Primary path: render directly from source sheet asset using cropRect (100% resilient across reloads)
+  const sourceAsset = mouthSet.sourceAssetId ? assets.get(mouthSet.sourceAssetId) : undefined;
+  if (sourceAsset?.url) {
+    try {
+      sourceSheetImage = await getImageElement(sourceAsset.id, sourceAsset.url);
+    } catch {
+      sourceSheetImage = null;
+    }
+  }
+
+  // 2. Secondary fallback: individual mouth sprite image only if source sheet unavailable
+  if (!sourceSheetImage && sprite.url && !sprite.url.startsWith('blob:')) {
+    try {
+      mouthImage = await getImageElement(sprite.id, sprite.url);
+    } catch {
+      mouthImage = null;
+    }
+  }
+
+  if (!mouthImage && !sourceSheetImage) {
     return;
   }
 
-  // In clip local space, character top-left is (-clip.width / 2, -clip.height / 2)
+  const effectiveW = tf ? tf.width : clip.width;
+  const effectiveH = tf ? tf.height : clip.height;
+
+  // In clip local space, character top-left is (-effectiveW / 2, -effectiveH / 2)
   const charPlacement = {
-    x: -clip.width / 2,
-    y: -clip.height / 2,
-    width: clip.width,
-    height: clip.height,
+    x: -effectiveW / 2,
+    y: -effectiveH / 2,
+    width: effectiveW,
+    height: effectiveH,
   };
 
   const mouthAnchor = lipSync.mouthAnchor || { x: 0.5, y: 0.5 };
@@ -173,11 +238,14 @@ async function renderMouthOverlay(
   const scaleMultiplier = shapeTuning?.scaleMultiplier ?? 1.0;
   const shapeOffset = shapeTuning ? { x: shapeTuning.offsetX || 0, y: shapeTuning.offsetY || 0 } : undefined;
 
+  const naturalW = sprite.width || mouthImage?.naturalWidth || sprite.cropRect?.width || 100;
+  const naturalH = sprite.height || mouthImage?.naturalHeight || sprite.cropRect?.height || 100;
+
   const drawRect = calculateMouthDrawRect(
     charPlacement,
     mouthAnchor,
-    sprite.width || mouthImage.naturalWidth,
-    sprite.height || mouthImage.naturalHeight,
+    naturalW,
+    naturalH,
     mouthScale,
     spriteAnchor,
     lipSync.mouthRotation || 0,
@@ -191,13 +259,31 @@ async function renderMouthOverlay(
   if (lipSync.mouthRotation) {
     ctx.rotate((lipSync.mouthRotation * Math.PI) / 180);
   }
-  ctx.drawImage(
-    mouthImage,
-    -drawRect.drawWidth * spriteAnchor.anchorX,
-    -drawRect.drawHeight * spriteAnchor.anchorY,
-    drawRect.drawWidth,
-    drawRect.drawHeight
-  );
+
+  const destX = -drawRect.drawWidth * spriteAnchor.anchorX;
+  const destY = -drawRect.drawHeight * spriteAnchor.anchorY;
+
+  if (mouthImage) {
+    ctx.drawImage(
+      mouthImage,
+      destX,
+      destY,
+      drawRect.drawWidth,
+      drawRect.drawHeight
+    );
+  } else if (sourceSheetImage && sprite.cropRect) {
+    ctx.drawImage(
+      sourceSheetImage,
+      sprite.cropRect.x,
+      sprite.cropRect.y,
+      sprite.cropRect.width,
+      sprite.cropRect.height,
+      destX,
+      destY,
+      drawRect.drawWidth,
+      drawRect.drawHeight
+    );
+  }
   ctx.restore();
 }
 
@@ -209,25 +295,29 @@ export function drawSelectionOverlay(
   ctx: CanvasRenderingContext2D,
   clip: VisualClip,
   zoom: number = 1.0,
-  showDiagnosticMouthBounds: boolean = false
+  showDiagnosticMouthBounds: boolean = false,
+  currentTime?: number
 ): void {
   ctx.save();
 
-  const centerX = clip.x + clip.width / 2;
-  const centerY = clip.y + clip.height / 2;
+  const localTime = currentTime !== undefined ? Math.max(0, currentTime - clip.start) : 0;
+  const tf = getClipTransformAtTime(clip, localTime);
+
+  const centerX = tf.x + tf.width / 2;
+  const centerY = tf.y + tf.height / 2;
 
   ctx.translate(centerX, centerY);
-  if (clip.rotation) {
-    ctx.rotate((clip.rotation * Math.PI) / 180);
+  if (tf.rotation) {
+    ctx.rotate((tf.rotation * Math.PI) / 180);
   }
 
-  const halfW = clip.width / 2;
-  const halfH = clip.height / 2;
+  const halfW = tf.width / 2;
+  const halfH = tf.height / 2;
 
   // Selection border (Refined violet)
   ctx.strokeStyle = '#8B5CF6';
   ctx.lineWidth = 2 / zoom;
-  ctx.strokeRect(-halfW, -halfH, clip.width, clip.height);
+  ctx.strokeRect(-halfW, -halfH, tf.width, tf.height);
 
   // Resize handles at 4 corners and 4 edges
   const handleSize = 8 / zoom;
@@ -268,8 +358,8 @@ export function drawSelectionOverlay(
   // If clip is lipSync, draw compact, non-intrusive character mouth anchor pin
   if (clip.type === 'lipSync' && clip.lipSyncData) {
     const anchor = clip.lipSyncData.mouthAnchor || { x: 0.5, y: 0.5 };
-    const pinX = -halfW + clip.width * anchor.x;
-    const pinY = -halfH + clip.height * anchor.y;
+    const pinX = -halfW + tf.width * anchor.x;
+    const pinY = -halfH + tf.height * anchor.y;
 
     ctx.save();
     ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
