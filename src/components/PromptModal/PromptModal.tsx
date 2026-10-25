@@ -162,8 +162,61 @@ Generate the full-face grid first, then wait for my approval or requested change
   {
     id: 'prompt-4',
     step: 4,
-    name: 'Prompt 4 — Generate the 9:16 mouthless character image',
-    shortLabel: '4. 9:16 Character',
+    name: 'Prompt 4 — Extract the transparent mouth sprite sheet',
+    shortLabel: '4. Sprite Sheet',
+    badge: 'Sprite Sheet',
+    icon: <Grid className="w-3.5 h-3.5 text-emerald-400" />,
+    prompt: `You are a professional 2D cartoon lip-sync sprite artist.
+
+I will provide the approved 3×3 full-face mouth-variation grid from Prompt 3.
+
+Your task is to extract the nine approved mouth shapes and create a separate transparent PNG sprite sheet.
+
+### Requirements
+
+- Extract exactly nine mouth shapes.
+- Preserve the approved designs without unnecessary redrawing.
+- Arrange them in a clean, evenly spaced 3×3 grid.
+- Remove the face, skin, nose, eyes, eyebrows, hair, and all other facial features.
+- Remove the original background completely.
+- Use genuine alpha transparency everywhere outside the mouth artwork.
+- Preserve necessary internal details, such as teeth and tongue.
+- Preserve each shape's proportions, outline, expression, and perspective.
+- Do not add skin-coloured patches, face fragments, or shadows outside the mouth.
+- Keep every shape complete, separate, and uncropped.
+- Do not stretch, flip, or rotate shapes in a way that conflicts with the character's face orientation.
+- Use the supplied A–H/X reference prompt as the authoritative source for mouth definitions and sequence. Do not change the mapping.
+- If labels would interfere with the artwork, leave the artwork unlabelled and provide the grid order separately.
+
+### Additional mouth/lips extraction requirements
+
+- Extract ONLY the actual mouth artwork from each approved variation.
+- **Do not extract, reproduce, or include the labels A, B, C, D, E, F, G, H, or X in the final sprite sheet. The letters must not appear anywhere in the exported image.**
+- Do not include text, numbers, symbols, label backgrounds, or other annotation elements.
+- Remove all external lips, skin-coloured lip borders, skin fragments, and surrounding face pixels.
+- Preserve the original mouth contours and internal details without redesigning or changing the established A–H/X mapping.
+- Pay special attention to shape F, which must not contain any skin-coloured lips or surrounding skin fragments.
+- Apply the same rule to all nine shapes. No sprite may contain external lips or face fragments.
+- Do not replace an incorrectly extracted mouth with a newly designed mouth. Preserve the approved shape and correct the extraction instead.
+- Maintain the original sequence and grid positions: first row A, B, C; second row D, E, F; third row G, H, X. Use these positions internally to preserve the mapping, but do not display the letters in the final image.
+
+Before presenting the result, verify that there are exactly nine distinct mouth shapes and that the background is truly transparent—not a white or checkerboard pattern baked into the image.
+
+If the extraction cannot preserve the approved mouth designs or orientation, explain the issue rather than silently redesigning them.
+
+### Final output
+
+- One transparent PNG sprite sheet.
+- Exactly nine mouth shapes in a clean 3×3 grid.
+- No labels, text, letters, or annotations.
+- No face, skin, external lips, or background remnants.
+- Genuine alpha transparency outside the mouth artwork.`,
+  },
+  {
+    id: 'prompt-5',
+    step: 5,
+    name: 'Prompt 5 — Generate the 9:16 mouthless character image',
+    shortLabel: '5. 9:16 Character',
     badge: '9:16 Vertical',
     icon: <Smartphone className="w-3.5 h-3.5 text-amber-400" />,
     prompt: `You are a professional 2D cartoon character artist preparing a character asset for lip-sync animation.
@@ -223,48 +276,6 @@ Generate **one clean, full-screen character image with the background, but with 
 This image will be used as the base character layer in my lip-sync website. The mouth will be added separately using the approved sprite sheet, so the mouth area must be clean and suitable for animation.
 
 If the supplied references conflict or the intended orientation is unclear, ask me before generating.`,
-  },
-  {
-    id: 'prompt-5',
-    step: 5,
-    name: 'Prompt 5 — Extract the transparent mouth sprite sheet',
-    shortLabel: '5. Sprite Sheet',
-    badge: 'Sprite Sheet',
-    icon: <Grid className="w-3.5 h-3.5 text-emerald-400" />,
-    prompt: `You are a professional 2D cartoon lip-sync sprite artist.
-
-I will provide the approved 3×3 full-face mouth-variation grid from Prompt 3.
-
-Your task is to extract the nine approved mouth shapes and create a separate transparent PNG sprite sheet.
-
-### Requirements
-
-- Extract exactly nine mouth shapes.
-- Preserve the approved designs without unnecessary redrawing.
-- Arrange them in a clean, evenly spaced 3×3 grid.
-- Remove the face, skin, nose, eyes, eyebrows, hair, and all other facial features.
-- Remove the original background completely.
-- Use genuine alpha transparency everywhere outside the mouth artwork.
-- Preserve necessary internal details, such as teeth and tongue.
-- Preserve each shape's proportions, outline, expression, and perspective.
-- Do not add skin-coloured patches, face fragments, or shadows outside the mouth.
-- Keep every shape complete, separate, and uncropped.
-- Do not stretch, flip, or rotate shapes in a way that conflicts with the character's face orientation.
-- Use the supplied A–H/X reference prompt as the authoritative source for mouth definitions and sequence. Do not change the mapping.
-- If labels would interfere with the artwork, leave the artwork unlabelled and provide the grid order separately.
-
-### Additional mouth/lips extraction requirements
-
-- Extract ONLY the actual mouth artwork from each approved variation.
-- Remove all external lips, skin-coloured lip borders, skin fragments, and surrounding face pixels.
-- Preserve the original mouth contours and internal details without redesigning or changing the established A–H/X mapping.
-- Pay special attention to shape F, which must not contain any skin-coloured lips or surrounding skin fragments.
-- Apply the same rule to all nine shapes. No sprite may contain external lips or face fragments.
-- Do not replace an incorrectly extracted mouth with a newly designed mouth. Preserve the approved shape and correct the extraction instead.
-
-Before presenting the result, verify that there are exactly nine distinct shapes and that the background is truly transparent—not a white or checkerboard pattern baked into the image.
-
-If the extraction cannot preserve the approved mouth designs or orientation, explain the issue rather than silently redesigning them.`,
   },
 ];
 
